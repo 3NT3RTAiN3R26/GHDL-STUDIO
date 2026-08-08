@@ -17,6 +17,7 @@ from ghdl_studio.ghdl_commands import (
     DEFAULT_STD,
     find_ghdl_executable,
 )
+from ghdl_studio.osvvm_commands import MODE_NORMAL, find_tclsh_executable
 from ghdl_studio.surfer_embed import find_surfer_executable
 
 ORG_NAME = "GhdlStudio"
@@ -149,3 +150,49 @@ class AppSettings:
     @recent_files.setter
     def recent_files(self, value: list[str]) -> None:
         self._set("recent_files", value)
+
+    @property
+    def startup_mode(self) -> str:
+        """``normal`` (manual GHDL files) or ``osvvm`` (.pro via TCL)."""
+        value = self._settings.value("startup_mode", MODE_NORMAL, str) or MODE_NORMAL
+        return value if value in ("normal", "osvvm") else MODE_NORMAL
+
+    @startup_mode.setter
+    def startup_mode(self, value: str) -> None:
+        self._set("startup_mode", value)
+
+    @property
+    def remember_startup_mode(self) -> bool:
+        return self._settings.value("remember_startup_mode", False, bool)
+
+    @remember_startup_mode.setter
+    def remember_startup_mode(self, value: bool) -> None:
+        self._set("remember_startup_mode", value)
+
+    @property
+    def last_pro_file(self) -> str:
+        return self._settings.value("last_pro_file", "", str) or ""
+
+    @last_pro_file.setter
+    def last_pro_file(self, value: str) -> None:
+        self._set("last_pro_file", value)
+
+    @property
+    def tcl_executable(self) -> str:
+        stored = self._settings.value("tcl_executable", "", str)
+        if stored:
+            return stored
+        return find_tclsh_executable() or ""
+
+    @tcl_executable.setter
+    def tcl_executable(self, value: str) -> None:
+        self._set("tcl_executable", value)
+
+    @property
+    def osvvm_scripts_path(self) -> str:
+        """Directory containing ``StartUp.tcl``, or the OsvvmLibraries root."""
+        return self._settings.value("osvvm_scripts_path", "", str) or ""
+
+    @osvvm_scripts_path.setter
+    def osvvm_scripts_path(self, value: str) -> None:
+        self._set("osvvm_scripts_path", value)

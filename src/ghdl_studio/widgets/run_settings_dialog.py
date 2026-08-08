@@ -28,6 +28,7 @@ from ghdl_studio.ghdl_commands import (
     find_ghdl_executable,
     get_ghdl_version,
 )
+from ghdl_studio.osvvm_commands import find_tclsh_executable, resolve_startup_tcl
 from ghdl_studio.surfer_embed import find_surfer_executable, is_embedding_supported
 from ghdl_studio.settings import AppSettings
 
@@ -74,7 +75,7 @@ class RunSettingsDialog(QDialog):
         self._osvvm_lib_edit = QLineEdit(run_options.osvvm_lib_path or settings.osvvm_lib_path, self)
         self._osvvm_lib_edit.setPlaceholderText("Directory with precompiled OSVVM libraries")
         self._osvvm_lib_edit.setToolTip(
-            "Path to a directory containing precompiled OSVVM GHDL libraries. "
+            "Normal GHDL mode: path to precompiled OSVVM GHDL libraries. "
             "Passed to Analyze/Elaborate/Run as -P<path>."
         )
         osvvm_browse_button = QPushButton("Browse...", self)
@@ -82,6 +83,36 @@ class RunSettingsDialog(QDialog):
         osvvm_lib_row = QHBoxLayout()
         osvvm_lib_row.addWidget(self._osvvm_lib_edit)
         osvvm_lib_row.addWidget(osvvm_browse_button)
+
+        self._tcl_path_edit = QLineEdit(settings.tcl_executable, self)
+        self._tcl_path_edit.setPlaceholderText("tclsh (required for OSVVM .pro mode)")
+        self._tcl_path_edit.setToolTip(
+            "TCL shell used to run OSVVM Scripts (source StartUp.tcl; build …pro). "
+            "Install with e.g. sudo apt install tcl"
+        )
+        tcl_browse_button = QPushButton("Browse...", self)
+        tcl_browse_button.clicked.connect(self._on_browse_tcl)
+        tcl_detect_button = QPushButton("Detect automatically", self)
+        tcl_detect_button.clicked.connect(self._on_autodetect_tcl)
+        tcl_path_row = QHBoxLayout()
+        tcl_path_row.addWidget(self._tcl_path_edit)
+        tcl_path_row.addWidget(tcl_browse_button)
+        tcl_path_row.addWidget(tcl_detect_button)
+
+        self._osvvm_scripts_edit = QLineEdit(settings.osvvm_scripts_path, self)
+        self._osvvm_scripts_edit.setPlaceholderText(
+            "…/OsvvmLibraries/Scripts or …/OsvvmLibraries"
+        )
+        self._osvvm_scripts_edit.setToolTip(
+            "OSVVM mode: directory that contains StartUp.tcl, or the "
+            "OsvvmLibraries root that contains Scripts/StartUp.tcl. "
+            "See https://github.com/OSVVM/OSVVM-Scripts"
+        )
+        osvvm_scripts_browse_button = QPushButton("Browse...", self)
+        osvvm_scripts_browse_button.clicked.connect(self._on_browse_osvvm_scripts)
+        osvvm_scripts_row = QHBoxLayout()
+        osvvm_scripts_row.addWidget(self._osvvm_scripts_edit)
+        osvvm_scripts_row.addWidget(osvvm_scripts_browse_button)
 
         self._custom_lib_edit = QLineEdit(run_options.custom_lib_path or settings.custom_lib_path, self)
         self._custom_lib_edit.setPlaceholderText("Directory with other precompiled GHDL libraries")
@@ -161,7 +192,9 @@ class RunSettingsDialog(QDialog):
         form.addRow("", check_button)
         form.addRow("VHDL standard:", self._std_combo)
         form.addRow("Output directory:", output_dir_row)
-        form.addRow("OSVVM lib path:", osvvm_lib_row)
+        form.addRow("OSVVM lib path (-P):", osvvm_lib_row)
+        form.addRow("TCL executable:", tcl_path_row)
+        form.addRow("OSVVM Scripts path:", osvvm_scripts_row)
         form.addRow("Custom lib path:", custom_lib_row)
         form.addRow("Surfer executable:", surfer_path_row)
         form.addRow("", self._surfer_enabled_check)
@@ -208,6 +241,37 @@ class RunSettingsDialog(QDialog):
         directory = QFileDialog.getExistingDirectory(self, "Select OSVVM library directory")
         if directory:
             self._osvvm_lib_edit.setText(directory)
+
+    def _on_browse_tcl(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "Select tclsh executable")
+        if path:
+            self._tcl_path_edit.setText(path)
+
+    def _on_autodetect_tcl(self) -> None:
+        found = find_tclsh_executable()
+        if found:
+            self._tcl_path_edit.setText(found)
+        else:
+            QMessageBox.warning(
+                self,
+                "Not found",
+                "tclsh was not found in PATH. Install TCL "
+                "(e.g. sudo apt install tcl) or select it manually.",
+            )
+
+    def _on_browse_osvvm_scripts(self) -> None:
+        directory = QFileDialog.getExistingDirectory(
+            self, "Select OSVVM Scripts or OsvvmLibraries directory"
+        )
+        if directory:
+            self._osvvm_scripts_edit.setText(directory)
+            if resolve_startup_tcl(directory) is None:
+                QMessageBox.warning(
+                    self,
+                    "StartUp.tcl not found",
+                    "That directory does not contain StartUp.tcl "
+                    "(or Scripts/StartUp.tcl). Check the path.",
+                )
 
     def _on_browse_custom_lib(self) -> None:
         directory = QFileDialog.getExistingDirectory(self, "Select custom library directory")
@@ -268,6 +332,8 @@ class RunSettingsDialog(QDialog):
         osvvm_lib_path = self._osvvm_lib_edit.text().strip()
         self._run_options.osvvm_lib_path = osvvm_lib_path
         self._settings.osvvm_lib_path = osvvm_lib_path
+        self._settings.tcl_executable = self._tcl_path_edit.text().strip()
+        self._settings.osvvm_scripts_path = self._osvvm_scripts_edit.text().strip()
         custom_lib_path = self._custom_lib_edit.text().strip()
         self._run_options.custom_lib_path = custom_lib_path
         self._settings.custom_lib_path = custom_lib_path
