@@ -282,6 +282,81 @@ def ensure_osvvm_run_scaffold(project_cwd: str) -> Path:
     return run_yml
 
 
+def stimulus_input_dir(process_cwd: str) -> Path:
+    """Directory resolved by the common TB path ``../input/...`` from cwd.
+
+    With process cwd ``…/output``, this is ``…/input``.
+    """
+    return Path(process_cwd).resolve().parent / "input"
+
+
+@dataclass(frozen=True)
+class StagedStimulusFile:
+    """One data/stimulus file made available beside the process cwd."""
+
+    source: str
+    destination: str
+    action: str  # "copied" | "already_in_place" | "missing_source"
+
+
+def stage_stimulus_files(
+    data_files: list[str],
+    process_cwd: str,
+) -> list[StagedStimulusFile]:
+    """Ensure project data files are reachable as ``../input/<name>`` from cwd.
+
+    Testbenches often open paths such as ``../input/ref_wave_data.txt`` while
+    GHDL Studio runs with cwd = ``output/``. This copies (or leaves in place)
+    each listed data file into ``<cwd>/../input/<basename>`` so that relative
+    open works even when the source lives elsewhere in the project tree.
+
+    Missing sources are reported with ``action="missing_source"`` and are not
+    created. Same-file sources (already at the destination) are left untouched.
+    """
+    if not data_files:
+        return []
+
+    input_dir = stimulus_input_dir(process_cwd)
+    input_dir.mkdir(parents=True, exist_ok=True)
+    results: list[StagedStimulusFile] = []
+
+    for raw in data_files:
+        source = Path(raw)
+        destination = (input_dir / source.name).resolve()
+
+        if not source.is_file():
+            results.append(
+                StagedStimulusFile(
+                    source=str(source),
+                    destination=str(destination),
+                    action="missing_source",
+                )
+            )
+            continue
+
+        source_resolved = source.resolve()
+        if source_resolved == destination:
+            results.append(
+                StagedStimulusFile(
+                    source=str(source_resolved),
+                    destination=str(destination),
+                    action="already_in_place",
+                )
+            )
+            continue
+
+        shutil.copy2(source_resolved, destination)
+        results.append(
+            StagedStimulusFile(
+                source=str(source_resolved),
+                destination=str(destination),
+                action="copied",
+            )
+        )
+
+    return results
+
+
 def clean_output_dir(output_dir: str) -> list[str]:
     """Entfernt alle generierten Build-Artefakte aus dem Ausgabeverzeichnis.
 

@@ -36,6 +36,10 @@ On **every operating system** the interface uses a consistent dark theme
   next to `output/`. Via Simulation → **"Clean"** (also a toolbar button) you can
   clear the output directory at any time — similar to a `clean` target in a GHDL
   Makefile
+- Before **Run**, **stages** project data/stimulus files into
+  `<output>/../input/<filename>` (copy if needed) so `../input/…` opens succeed
+  even when the source file lives elsewhere in the tree; the log shows the cwd and
+  staging result
 - Live log console shows GHDL output and **OSVVM transcript** lines (`%% … Log …`),
   including text that GHDL writes on stderr
 - Before **Run**, creates the OSVVM report scaffold (`OsvvmTemp_GHDL/OsvvmRun.yml`)

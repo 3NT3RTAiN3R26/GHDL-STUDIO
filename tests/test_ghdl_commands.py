@@ -13,6 +13,8 @@ from ghdl_studio.ghdl_commands import (
     elaborated_executable_path,
     ensure_osvvm_run_scaffold,
     parse_ghdl_version,
+    stage_stimulus_files,
+    stimulus_input_dir,
 )
 
 
@@ -95,6 +97,52 @@ def test_ensure_osvvm_run_scaffold_creates_dir_and_executable_yml(tmp_path):
     again = ensure_osvvm_run_scaffold(str(tmp_path))
     assert again == yml
     assert yml.stat().st_mode & 0o111  # executable bit set on Unix
+
+
+def test_stimulus_input_dir_is_sibling_of_output(tmp_path):
+    output = tmp_path / "output"
+    output.mkdir()
+    assert stimulus_input_dir(str(output)) == (tmp_path / "input").resolve()
+
+
+def test_stage_stimulus_files_copies_into_sibling_input(tmp_path):
+    project = tmp_path / "trunk"
+    output = project / "output"
+    output.mkdir(parents=True)
+    source = project / "stim" / "ref_wave_data.txt"
+    source.parent.mkdir()
+    source.write_text("1.0 2.0\n", encoding="utf-8")
+
+    staged = stage_stimulus_files([str(source)], str(output))
+    dest = project / "input" / "ref_wave_data.txt"
+    assert dest.is_file()
+    assert dest.read_text(encoding="utf-8") == "1.0 2.0\n"
+    assert len(staged) == 1
+    assert staged[0].action == "copied"
+    assert staged[0].destination == str(dest.resolve())
+
+
+def test_stage_stimulus_files_already_in_place(tmp_path):
+    project = tmp_path / "trunk"
+    output = project / "output"
+    input_dir = project / "input"
+    output.mkdir(parents=True)
+    input_dir.mkdir()
+    source = input_dir / "ref_wave_data.txt"
+    source.write_text("x\n", encoding="utf-8")
+
+    staged = stage_stimulus_files([str(source)], str(output))
+    assert staged[0].action == "already_in_place"
+    assert source.read_text(encoding="utf-8") == "x\n"
+
+
+def test_stage_stimulus_files_reports_missing_source(tmp_path):
+    output = tmp_path / "output"
+    output.mkdir()
+    missing = tmp_path / "gone.txt"
+    staged = stage_stimulus_files([str(missing)], str(output))
+    assert staged[0].action == "missing_source"
+    assert not (tmp_path / "input" / "gone.txt").exists()
 
 
 def test_build_analyze_args_requires_files():

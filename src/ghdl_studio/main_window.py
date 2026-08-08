@@ -32,6 +32,8 @@ from ghdl_studio.ghdl_commands import (
     clean_output_dir,
     elaborated_executable_path,
     ensure_osvvm_run_scaffold,
+    stage_stimulus_files,
+    stimulus_input_dir,
 )
 from ghdl_studio.ghdl_runner import GhdlRunner
 from ghdl_studio.surfer_embed import SurferEmbedder
@@ -483,6 +485,38 @@ class MainWindow(QMainWindow):
         ensure_osvvm_run_scaffold(process_cwd)
         if project_root != process_cwd:
             ensure_osvvm_run_scaffold(project_root)
+
+        # Stage data/stimulus files so TB paths like ../input/ref_wave_data.txt
+        # resolve from cwd=output/ even if the source lives elsewhere.
+        data_files = [f for f in self._file_explorer.files() if is_data_file(f)]
+        expected_input = stimulus_input_dir(process_cwd)
+        self._log_console.append_output(
+            f"Run working directory: {process_cwd} "
+            f"(TB path ../input/… → {expected_input})"
+        )
+        if data_files:
+            staged = stage_stimulus_files(data_files, process_cwd)
+            for item in staged:
+                if item.action == "copied":
+                    self._log_console.append_output(
+                        f"Staged stimulus: {item.source} → {item.destination}"
+                    )
+                elif item.action == "already_in_place":
+                    self._log_console.append_output(
+                        f"Stimulus ready: {item.destination}"
+                    )
+                else:
+                    self._log_console.append_error(
+                        f"Stimulus missing (add the real file to the project): "
+                        f"{item.source}"
+                    )
+        else:
+            self._log_console.append_output(
+                "No data/stimulus files in the project list. If the testbench "
+                f"opens ../input/…, add those files (or place them under "
+                f"{expected_input})."
+            )
+
         vcd_abs = str(Path(output_dir) / self._run_options.vcd_filename())
         ghw_abs = str(Path(output_dir) / self._run_options.ghw_filename())
         sim_opts = build_simulation_option_args(
