@@ -1,10 +1,11 @@
-"""Widget zur Verwaltung der VHDL-Quelldateien eines Projekts."""
+"""Widget zur Verwaltung der Quelldateien eines Projekts (VHDL und Verilog)."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 from PySide6.QtCore import Signal
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QFileDialog,
@@ -16,9 +17,21 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ghdl_gui.vhdl_scanner import is_verilog_file
+
+_VERILOG_COLOR = QColor("#c586c0")
+
 
 class FileExplorer(QWidget):
-    """Zeigt die dem Projekt hinzugefuegten VHDL-Dateien in einer Liste an."""
+    """Zeigt die dem Projekt hinzugefuegten Quelldateien in einer Liste an.
+
+    Unterstuetzt sowohl VHDL- als auch Verilog/SystemVerilog-Dateien. GHDL
+    selbst kann nur VHDL-Dateien analysieren/simulieren; Verilog-Dateien
+    koennen dennoch dem Projekt hinzugefuegt werden (z. B. zur Organisation
+    gemischtsprachiger Projekte) und werden beim Analyze-Schritt
+    uebersprungen (siehe MainWindow._run_analyze). Verilog-Eintraege werden
+    farblich hervorgehoben und mit einem Hinweis in der Tooltip markiert.
+    """
 
     files_changed = Signal(list)  # list[str]
     file_double_clicked = Signal(str)
@@ -54,7 +67,15 @@ class FileExplorer(QWidget):
                 continue
             item = QListWidgetItem(Path(normalized).name)
             item.setData(0, normalized)
-            item.setToolTip(normalized)
+            if is_verilog_file(normalized):
+                item.setForeground(_VERILOG_COLOR)
+                item.setToolTip(
+                    f"{normalized}\n"
+                    "Hinweis: GHDL kann Verilog-Dateien nicht direkt analysieren. "
+                    "Diese Datei wird beim Analyze-Schritt uebersprungen."
+                )
+            else:
+                item.setToolTip(normalized)
             self._list.addItem(item)
             existing.add(normalized)
         self.files_changed.emit(self.files())
@@ -62,9 +83,12 @@ class FileExplorer(QWidget):
     def _on_add_files(self) -> None:
         paths, _ = QFileDialog.getOpenFileNames(
             self,
-            "VHDL-Dateien hinzufuegen",
+            "Quelldateien hinzufuegen",
             "",
-            "VHDL-Dateien (*.vhd *.vhdl);;Alle Dateien (*)",
+            "VHDL- und Verilog-Dateien (*.vhd *.vhdl *.v *.sv);;"
+            "VHDL-Dateien (*.vhd *.vhdl);;"
+            "Verilog/SystemVerilog-Dateien (*.v *.sv);;"
+            "Alle Dateien (*)",
         )
         if paths:
             self.add_files(paths)
