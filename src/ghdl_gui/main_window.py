@@ -42,6 +42,7 @@ class MainWindow(QMainWindow):
             std=self._settings.vhdl_std,
             extra_analyze_args=self._settings.analyze_extra_args,
             extra_elaborate_args=self._settings.elaborate_extra_args,
+            extra_run_args=self._settings.run_extra_args,
         )
         self._runner = GhdlRunner(self)
         self._runner.started.connect(self._on_command_started)

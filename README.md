@@ -22,6 +22,7 @@ läuft die GUI unverändert unter Linux, Windows und macOS.
   und über den Einstellungsdialog anpassbar bzw. per Klick auf "Standard" zurücksetzbar:
   - `ghdl -a`: `-Wc,-fprofile-arcs -Wc,-ftest-coverage -fsynopsys -fPIE`
   - `ghdl -e`: `-Wl,-lgcov -fsynopsys -fPIE`
+  - `ghdl -r`: `-fsynopsys`
 - Einstellungen werden plattformübergreifend über `QSettings` persistiert
 
 ## Projektstruktur

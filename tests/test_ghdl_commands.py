@@ -1,6 +1,7 @@
 from ghdl_gui.ghdl_commands import (
     DEFAULT_ANALYZE_EXTRA_ARGS,
     DEFAULT_ELABORATE_EXTRA_ARGS,
+    DEFAULT_RUN_EXTRA_ARGS,
     RunOptions,
     build_analyze_args,
     build_elaborate_args,
@@ -69,6 +70,11 @@ def test_run_options_default_elaborate_args_include_gcc_backend_flags():
     assert options.extra_elaborate_args == list(DEFAULT_ELABORATE_EXTRA_ARGS)
 
 
+def test_run_options_default_run_args_include_gcc_backend_flags():
+    options = RunOptions()
+    assert options.extra_run_args == list(DEFAULT_RUN_EXTRA_ARGS)
+
+
 def test_build_analyze_args_with_default_gcc_backend_flags():
     args = build_analyze_args(
         ["counter.vhd"], extra_args=list(DEFAULT_ANALYZE_EXTRA_ARGS)
@@ -95,4 +101,26 @@ def test_build_elaborate_args_with_default_gcc_backend_flags():
         "-fsynopsys",
         "-fPIE",
         "counter_tb",
+    ]
+
+
+def test_build_run_args_extra_args_precede_unit_name():
+    # -fsynopsys ist eine allgemeine GHDL-Option und muss laut Syntax
+    # "-r <[options...] unit [simulation_options...]>" VOR dem Unit-Namen
+    # stehen, waehrend Generics/--vcd=/--stop-time= DANACH folgen.
+    args = build_run_args(
+        "counter_tb",
+        vcd_path="out.vcd",
+        stop_time="200ns",
+        generics={"WIDTH": "8"},
+        extra_args=list(DEFAULT_RUN_EXTRA_ARGS),
+    )
+    assert args == [
+        "-r",
+        "--std=08",
+        "-fsynopsys",
+        "counter_tb",
+        "-gWIDTH=8",
+        "--vcd=out.vcd",
+        "--stop-time=200ns",
     ]

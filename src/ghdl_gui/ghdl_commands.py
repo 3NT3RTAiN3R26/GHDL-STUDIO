@@ -37,6 +37,13 @@ DEFAULT_ELABORATE_EXTRA_ARGS = (
     "-fPIE",
 )
 
+# Wird standardmaessig bei jedem "ghdl -r" mitgegeben, damit die
+# Synopsys-Erweiterungen konsistent mit Analyze/Elaborate aktiv sind. Ueber
+# den Einstellungsdialog vom Nutzer anpassbar.
+DEFAULT_RUN_EXTRA_ARGS = (
+    "-fsynopsys",
+)
+
 
 def find_ghdl_executable() -> str | None:
     """Sucht die ghdl-Executable im PATH und gibt den vollen Pfad zurueck."""
@@ -117,12 +124,20 @@ def build_run_args(
     generics: dict[str, str] | None = None,
     extra_args: list[str] | None = None,
 ) -> list[str]:
-    """Baut die Argumente fuer ``ghdl -r`` (Run) auf."""
+    """Baut die Argumente fuer ``ghdl -r`` (Run) auf.
+
+    Laut GHDL-Syntax ``-r <[options...] unit [simulation_options...]>``
+    muessen allgemeine Optionen wie ``-fsynopsys`` VOR dem Unit-Namen stehen,
+    waehrend Generics, ``--vcd=`` und ``--stop-time=`` als Simulationsoptionen
+    NACH dem Unit-Namen folgen. ``extra_args`` wird daher vor dem Unit-Namen
+    eingefuegt, analog zu ``build_analyze_args``/``build_elaborate_args``.
+    """
     if not unit:
         raise ValueError("Es muss eine Top-Level-Entity angegeben werden.")
     args = ["-r", f"--std={std}"]
     if work_dir:
         args.append(f"--workdir={work_dir}")
+    args.extend(extra_args or [])
     args.append(unit)
     for key, value in (generics or {}).items():
         args.append(f"-g{key}={value}")
@@ -130,7 +145,6 @@ def build_run_args(
         args.append(f"--vcd={vcd_path}")
     if stop_time:
         args.append(f"--stop-time={stop_time}")
-    args.extend(extra_args or [])
     return args
 
 
@@ -145,7 +159,7 @@ class RunOptions:
     generics: dict[str, str] = field(default_factory=dict)
     extra_analyze_args: list[str] = field(default_factory=lambda: list(DEFAULT_ANALYZE_EXTRA_ARGS))
     extra_elaborate_args: list[str] = field(default_factory=lambda: list(DEFAULT_ELABORATE_EXTRA_ARGS))
-    extra_run_args: list[str] = field(default_factory=list)
+    extra_run_args: list[str] = field(default_factory=lambda: list(DEFAULT_RUN_EXTRA_ARGS))
 
     def vcd_path(self) -> str:
         base = Path(self.work_dir) if self.work_dir else Path(".")
