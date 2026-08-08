@@ -26,7 +26,7 @@ Die Oberfläche nutzt auf **allen Betriebssystemen** ein einheitliches dunkles T
   - Kombinierter Ablauf "Analyze + Elaborate + Run"
 - **Eigenes Ausgabeverzeichnis** (standardmäßig `output/`, konfigurierbar in den Einstellungen):
   Analyze/Elaborate/Run laufen mit diesem Verzeichnis als Arbeitsverzeichnis, sodass Work-
-  Bibliothek (`work-obj*.cf`), Objektdateien (`*.o`), VCD-Dumps (`*.vcd`), Coverage-Daten
+  Bibliothek (`work-obj*.cf`), Objektdateien (`*.o`), Waveform-Dumps (`*.vcd`/`*.ghw`), Coverage-Daten
   (`*.gcda`/`*.gcno`) und die elaborierte Simulations-Executable dort landen statt das
   Projekt-Wurzelverzeichnis zuzumüllen. Über "Simulation" → **"Bereinigen (Clean)"** (auch als
   Toolbar-Button) lässt sich der Inhalt des Ausgabeverzeichnisses jederzeit wieder entfernen —
