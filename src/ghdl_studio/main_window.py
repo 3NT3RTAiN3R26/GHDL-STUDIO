@@ -532,7 +532,10 @@ class MainWindow(QMainWindow):
 
     def _on_surfer_failed(self, reason: str) -> None:
         self._clear_surfer_container()
-        self._waveform_status_label.setText(f"Wellenform-Anzeige: interner Viewer (Surfer: {reason})")
+        # Status sofort aktualisieren (nicht auf "wird gestartet..." stehen bleiben),
+        # interner Viewer ist bereits geladen; Surfer kann parallel als Fenster offen sein.
+        short = reason if len(reason) <= 180 else reason[:177] + "..."
+        self._waveform_status_label.setText(f"Wellenform-Anzeige: interner Viewer ({short})")
         self._log_console.append_output(f"Surfer-Einbettung nicht verfuegbar: {reason}")
         self._waveform_stack.setCurrentIndex(_WAVEFORM_PAGE_INTERNAL)
         if self._settings.surfer_integration_enabled and self._settings.surfer_executable:

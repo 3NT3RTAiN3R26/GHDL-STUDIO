@@ -40,6 +40,20 @@ def test_is_embedding_supported_returns_bool():
     assert isinstance(is_embedding_supported(), bool)
 
 
+def test_is_embedding_supported_false_on_linux_wayland(monkeypatch):
+    if not sys.platform.startswith("linux"):
+        monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr("ghdl_studio.surfer_embed.qt_platform_name", lambda: "wayland")
+    assert is_embedding_supported() is False
+
+
+def test_is_embedding_supported_true_on_linux_xcb(monkeypatch):
+    if not sys.platform.startswith("linux"):
+        monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr("ghdl_studio.surfer_embed.qt_platform_name", lambda: "xcb")
+    assert is_embedding_supported() is True
+
+
 def test_start_with_nonexistent_executable_emits_failed(qapp):
     embedder = SurferEmbedder()
     results = []

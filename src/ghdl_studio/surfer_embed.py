@@ -31,7 +31,15 @@ import shutil
 import subprocess
 import sys
 
-from PySide6.QtCore import QEvent, QObject, QProcess, Qt, QTimer, Signal
+from PySide6.QtCore import (
+    QEvent,
+    QObject,
+    QProcess,
+    QProcessEnvironment,
+    Qt,
+    QTimer,
+    Signal,
+)
 from PySide6.QtWidgets import QWidget
 
 _POLL_INTERVAL_MS = 300
@@ -46,8 +54,36 @@ def find_surfer_executable() -> str | None:
 
 
 def is_embedding_supported() -> bool:
-    """Ob fuer die aktuelle Plattform ueberhaupt ein Embedding-Verfahren existiert."""
-    return sys.platform.startswith("linux") or sys.platform.startswith("win")
+    """Ob fuer die aktuelle Plattform ein Embedding-Verfahren nutzbar ist.
+
+    Unter Linux nur mit Qt-``xcb`` (X11-Reparenting). Laeuft die GUI unter
+    ``wayland`` (haeufiger WSL-Fallback ohne funktionierendes xcb), ist
+    Einbettung nicht moeglich — Surfer wird dann als separates Fenster
+    gestartet.
+    """
+    if sys.platform.startswith("win"):
+        return True
+    if sys.platform.startswith("linux"):
+        name = qt_platform_name()
+        if not name:
+            return True  # QApplication noch nicht da / unbekannt
+        return name == "xcb"
+    return False
+
+
+def _surfer_process_environment() -> QProcessEnvironment:
+    """Umgebung fuer den Surfer-Subprozess.
+
+    Surfer (egui/winit) bevorzugt unter WSL oft Wayland, wenn
+    ``WAYLAND_DISPLAY`` gesetzt ist. Ein Wayland-Fenster laesst sich nicht
+    per X11-Reparenting einbetten. Deshalb erzwingen wir fuer den
+    Embed-Versuch X11/XWayland.
+    """
+    env = QProcessEnvironment.systemEnvironment()
+    if sys.platform.startswith("linux"):
+        env.insert("WINIT_UNIX_BACKEND", "x11")
+        env.remove("WAYLAND_DISPLAY")
+    return env
 
 
 def is_xlib_available() -> bool:
@@ -668,17 +704,28 @@ class SurferEmbedder(QObject):
         self.stop()
 
         if not is_embedding_supported():
-            self.failed.emit(
-                "Fenster-Einbettung wird auf dieser Plattform nicht unterstuetzt "
-                "(nur Linux/X11 und Windows). Surfer wird als eigenstaendiges "
-                "Fenster geoeffnet."
-            )
+            platform = qt_platform_name() or "unbekannt"
+            if sys.platform.startswith("linux") and platform != "xcb":
+                self.failed.emit(
+                    f"Einbettung braucht Qt-xcb (aktuell: {platform}). "
+                    "Surfer wird als separates Fenster geoeffnet; interner Viewer bleibt aktiv. "
+                    "Fuer Einbettung wie unter Windows: X11-Deps installieren "
+                    "(libxcb-cursor0, libxkbcommon-x11-0, …) und ohne "
+                    "QT_QPA_PLATFORM=wayland neu starten."
+                )
+            else:
+                self.failed.emit(
+                    "Fenster-Einbettung wird auf dieser Plattform nicht unterstuetzt "
+                    "(nur Linux/X11 und Windows). Surfer wird als eigenstaendiges "
+                    "Fenster geoeffnet."
+                )
             self._launch_standalone(surfer_executable, vcd_path)
             return
 
         self._parent_widget = parent_widget
         self._attempts = 0
         self._process = QProcess(self)
+        self._process.setProcessEnvironment(_surfer_process_environment())
         self._process.start(surfer_executable, [vcd_path])
         if not self._process.waitForStarted(5000):
             self.failed.emit("Surfer konnte nicht gestartet werden. Ist Surfer installiert und im PATH?")
@@ -688,6 +735,8 @@ class SurferEmbedder(QObject):
         self._timer.start()
 
     def _launch_standalone(self, surfer_executable: str, vcd_path: str) -> None:
+        # Standalone: Surfer darf sein bevorzugtes Backend behalten (unter
+        # Wayland-Sessions oft fluessiger). Kein WINIT_UNIX_BACKEND-Zwang.
         QProcess.startDetached(surfer_executable, [vcd_path])
 
     def _poll_for_window(self) -> None:
@@ -724,9 +773,9 @@ class SurferEmbedder(QObject):
             else:
                 reason += (
                     " 'python-xlib' ist installiert, das Fenster wurde aber trotzdem nicht "
-                    "gefunden - moeglicherweise ist der Fenstermanager/Compositor "
-                    "(z. B. unter WSLg) zu langsam. Versuche es ggf. per Klick auf "
-                    "'Erneut versuchen' noch einmal."
+                    "gefunden. Surfer laeuft ggf. als Wayland-Fenster (nicht einbettbar) — "
+                    "dieser Start erzwingt WINIT_UNIX_BACKEND=x11. Bitte 'Erneut versuchen'; "
+                    "unter WSLg kann der Compositor auch etwas brauchen."
                 )
         return reason
 
