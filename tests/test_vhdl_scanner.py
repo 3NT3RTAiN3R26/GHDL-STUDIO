@@ -1,6 +1,7 @@
 from ghdl_studio.vhdl_scanner import (
     find_verilog_modules,
     find_vhdl_entities,
+    is_data_file,
     is_verilog_file,
     is_vhdl_file,
 )
@@ -89,3 +90,11 @@ def test_find_verilog_modules(tmp_path):
 def test_find_vhdl_entities_missing_file_is_ignored(tmp_path):
     missing = tmp_path / "does_not_exist.vhd"
     assert find_vhdl_entities([str(missing)]) == []
+
+
+def test_is_data_file_recognises_stimulus_extensions():
+    assert is_data_file("input/ref_wave_data.txt")
+    assert is_data_file("vectors.CSV")
+    assert is_data_file("mem.hex")
+    assert not is_data_file("counter.vhd")
+    assert not is_data_file("top.sv")

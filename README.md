@@ -9,11 +9,13 @@ On **every operating system** the interface uses a consistent dark theme
 
 ## Features (current status)
 
-- Manage source files in a project (add/remove, **Move up** / **Move down** for
-  compile order), both **VHDL** (`.vhd`/`.vhdl`) and **Verilog/SystemVerilog**
-  (`.v`/`.sv`) — Verilog files are colour-highlighted and skipped during the
-  `Analyze` step with a note in the log console, because GHDL can only
-  analyse/simulate VHDL
+- Manage project files (add/remove, **Move up** / **Move down** for compile
+  order): **VHDL** (`.vhd`/`.vhdl`), **Verilog/SystemVerilog** (`.v`/`.sv`), and
+  **data/stimulus** files (`.txt`, `.csv`, `.dat`, `.hex`, …). Verilog and data
+  files are colour-highlighted and skipped during `Analyze` (GHDL only analyses
+  VHDL); data files still count toward the project root so layouts such as
+  `input/ref_wave_data.txt` next to `output/` work with TB paths like
+  `../input/…`
 - Simple code editor with VHDL syntax highlighting for viewing/editing files
 - **Choose the top-level entity with a click**: a toolbar on the main window shows a
   combo box of all VHDL entities found in the project files (updated automatically
@@ -27,17 +29,18 @@ On **every operating system** the interface uses a consistent dark theme
   - Combined flow "Analyze + Elaborate + Run" (individual Analyze / Elaborate / Run
   buttons do **not** chain into the next step)
 - **Dedicated output directory** (default `output/`, configurable in Settings):
-  passed to GHDL as `--workdir` so the work library (`work-obj*.cf`), object files
-  (`*.o`), waveform dumps (`*.vcd`/`*.ghw`), coverage data (`*.gcda`/`*.gcno`) and the
-  elaborated simulation executable land there. The process **cwd** remains the project
-  directory (common parent of the VHDL sources) so frameworks such as OSVVM can open
-  relative paths like `OsvvmTemp_GHDL/…`. Via Simulation → **"Clean"** (also a
-  toolbar button) you can clear the output directory at any time —
-  similar to a `clean` target in a GHDL Makefile
+  passed to GHDL as `--workdir`, and used as the process **cwd**, so the work
+  library (`work-obj*.cf`), object files (`*.o`), waveform dumps (`*.vcd`/`*.ghw`),
+  coverage data (`*.gcda`/`*.gcno`) and the elaborated simulation executable land
+  there. Relative TB paths such as `../input/ref_wave_data.txt` therefore resolve
+  next to `output/`. Via Simulation → **"Clean"** (also a toolbar button) you can
+  clear the output directory at any time — similar to a `clean` target in a GHDL
+  Makefile
 - Live log console shows GHDL output and **OSVVM transcript** lines (`%% … Log …`),
   including text that GHDL writes on stderr
 - Before **Run**, creates the OSVVM report scaffold (`OsvvmTemp_GHDL/OsvvmRun.yml`)
-  in the project directory when missing (normally created by the OSVVM TCL flow)
+  in the output directory (and project root) when missing (normally created by the
+  OSVVM TCL flow)
 - Live log console with colour coding (command / output / error / success)
 - **Fully embedded [Surfer](https://surfer-project.org/)** in the "Waveforms" tab:
   If Surfer is installed, it is started automatically after each simulation run and its

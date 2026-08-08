@@ -37,7 +37,12 @@ from ghdl_studio.ghdl_runner import GhdlRunner
 from ghdl_studio.surfer_embed import SurferEmbedder
 from ghdl_studio.settings import AppSettings
 from ghdl_studio.vcd_parser import parse_vcd
-from ghdl_studio.vhdl_scanner import find_vhdl_entities, is_verilog_file, is_vhdl_file
+from ghdl_studio.vhdl_scanner import (
+    find_vhdl_entities,
+    is_data_file,
+    is_verilog_file,
+    is_vhdl_file,
+)
 from ghdl_studio.widgets.code_editor import CodeEditor
 from ghdl_studio.widgets.file_explorer import FileExplorer
 from ghdl_studio.widgets.log_console import LogConsole, is_osvvm_transcript_line
@@ -340,21 +345,20 @@ class MainWindow(QMainWindow):
             return None
         return executable
 
-    def _project_working_directory(self) -> str:
-        """Directory used as the GHDL process cwd (project root).
+    def _project_root_directory(self) -> str:
+        """Common parent of all project files (HDL + data/stimulus).
 
-        OSVVM and similar frameworks open relative paths such as
-        ``OsvvmTemp_GHDL/OsvvmRun.yml`` against this directory. Build
-        artefacts still go to the configured output directory via
-        ``--workdir``.
+        Including ``.txt`` / other data files matters when sources live in
+        ``tb/`` or ``rtl/`` while stimulus lives in ``input/`` — the shared
+        root is then the real project directory.
         """
-        vhdl_files = [f for f in self._file_explorer.files() if is_vhdl_file(f)]
-        if vhdl_files:
-            parents = [str(Path(f).resolve().parent) for f in vhdl_files]
+        files = self._file_explorer.files()
+        if files:
+            parents = [str(Path(f).resolve().parent) for f in files]
             try:
                 return str(Path(os.path.commonpath(parents)))
             except ValueError:
-                return str(Path(vhdl_files[0]).resolve().parent)
+                return str(Path(files[0]).resolve().parent)
         stored = self._settings.last_project_dir
         if stored:
             return stored
@@ -363,13 +367,19 @@ class MainWindow(QMainWindow):
     def _ensure_output_dir(self) -> str:
         """Ensure the output directory exists and return it as an absolute path.
 
-        Relative output dirs are resolved against the project working directory.
+        Relative output dirs are resolved against the project root. The GHDL
+        process uses this directory as cwd so testbench paths such as
+        ``../input/ref_wave_data.txt`` resolve next to ``output/``.
         """
         output = Path(self._run_options.output_dir)
         if not output.is_absolute():
-            output = Path(self._project_working_directory()) / output
+            output = Path(self._project_root_directory()) / output
         output.mkdir(parents=True, exist_ok=True)
         return str(output.resolve())
+
+    def _ghdl_process_cwd(self) -> str:
+        """Working directory for Analyze / Elaborate / Run processes."""
+        return self._ensure_output_dir()
 
     def _run_analyze(self) -> None:
         """Toolbar/menu Analyze: analyse only (no automatic Elaborate/Run)."""
@@ -399,6 +409,7 @@ class MainWindow(QMainWindow):
         all_files = self._file_explorer.files()
         vhdl_files = [f for f in all_files if is_vhdl_file(f)]
         verilog_files = [f for f in all_files if is_verilog_file(f)]
+        data_files = [f for f in all_files if is_data_file(f)]
         if not vhdl_files:
             self._pending_chain = []
             QMessageBox.warning(self, "No VHDL files", "Please add VHDL files first.")
@@ -409,7 +420,12 @@ class MainWindow(QMainWindow):
                 "Note: GHDL cannot analyse/simulate Verilog files directly. "
                 f"The following file(s) will be skipped during 'Analyze': {names}"
             )
-        project_cwd = self._project_working_directory()
+        if data_files:
+            names = ", ".join(Path(f).name for f in data_files)
+            self._log_console.append_output(
+                "Note: data/stimulus file(s) are not passed to 'Analyze' "
+                f"(available to the simulation via relative paths): {names}"
+            )
         output_dir = self._ensure_output_dir()
         args = build_analyze_args(
             vhdl_files,
@@ -418,7 +434,7 @@ class MainWindow(QMainWindow):
             extra_args=self._run_options.extra_analyze_args,
             library_paths=self._run_options.library_paths(),
         )
-        self._runner.run(executable, args, cwd=project_cwd, label="Analyze")
+        self._runner.run(executable, args, cwd=self._ghdl_process_cwd(), label="Analyze")
 
     def _start_elaborate(self) -> None:
         executable = self._ghdl_executable_or_warn()
@@ -431,10 +447,8 @@ class MainWindow(QMainWindow):
                 self, "No top entity", "Please select a top-level entity in the toolbar above."
             )
             return
-        project_cwd = self._project_working_directory()
         output_dir = self._ensure_output_dir()
-        # Keep the elaborated executable inside the output directory even though
-        # the process cwd is the project root (needed for OSVVM relative paths).
+        # Place the elaborated executable in the output directory (also the process cwd).
         elaborate_extra = [
             *self._run_options.extra_elaborate_args,
             "-o",
@@ -447,7 +461,7 @@ class MainWindow(QMainWindow):
             extra_args=elaborate_extra,
             library_paths=self._run_options.library_paths(),
         )
-        self._runner.run(executable, args, cwd=project_cwd, label="Elaborate")
+        self._runner.run(executable, args, cwd=self._ghdl_process_cwd(), label="Elaborate")
 
     def _start_run(self) -> None:
         executable = self._ghdl_executable_or_warn()
@@ -460,10 +474,15 @@ class MainWindow(QMainWindow):
                 self, "No top entity", "Please select a top-level entity in the toolbar above."
             )
             return
-        project_cwd = self._project_working_directory()
+        project_root = self._project_root_directory()
         output_dir = self._ensure_output_dir()
+        process_cwd = self._ghdl_process_cwd()
         # OSVVM TCL normally creates this; plain GHDL runs still open the file.
-        ensure_osvvm_run_scaffold(project_cwd)
+        # Scaffold in the process cwd (output/) and at the project root for TBs
+        # that open either OsvvmTemp_GHDL/... or paths under the project tree.
+        ensure_osvvm_run_scaffold(process_cwd)
+        if project_root != process_cwd:
+            ensure_osvvm_run_scaffold(project_root)
         vcd_abs = str(Path(output_dir) / self._run_options.vcd_filename())
         ghw_abs = str(Path(output_dir) / self._run_options.ghw_filename())
         sim_opts = build_simulation_option_args(
@@ -477,9 +496,10 @@ class MainWindow(QMainWindow):
         # Elaborate uses ``-o <output>/<unit>``. GCC/LLVM backends then need that
         # binary started directly — ``ghdl -r <unit>`` only looks in the process cwd.
         # Do not forward GHDL-only flags (e.g. -fsynopsys) to the sim binary.
+        # cwd=output so TB paths like ../input/*.txt resolve beside output/.
         elaborated = elaborated_executable_path(output_dir, self._run_options.top_unit)
         if elaborated is not None:
-            self._runner.run(elaborated, sim_opts, cwd=project_cwd, label="Run")
+            self._runner.run(elaborated, sim_opts, cwd=process_cwd, label="Run")
             return
 
         # mcode (or missing elaborate): fall back to ``ghdl -r`` + --workdir
@@ -494,7 +514,7 @@ class MainWindow(QMainWindow):
             extra_args=self._run_options.extra_run_args,
             library_paths=self._run_options.library_paths(),
         )
-        self._runner.run(executable, args, cwd=project_cwd, label="Run")
+        self._runner.run(executable, args, cwd=process_cwd, label="Run")
 
     def _on_clean_clicked(self) -> None:
         """Entspricht einem 'make clean': entfernt alle im Ausgabeverzeichnis
