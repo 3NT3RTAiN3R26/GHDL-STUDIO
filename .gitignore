@@ -1,26 +1,32 @@
-build/
-*.cf
-# Coverage-Daten und die elaborierte Simulations-Executable.
-dist/
-.DS_Store
-*.egg-info/
-examples/adder/adder/
-examples/adder/VHDL_LIBS/
-*.gcda
-*.gcno
-# ghdl_commands.py): enthaelt Work-Bibliothek, Objektdateien, VCD-Dumps,
-*.ghw
-*.log
-.mypy_cache/
-*.o
-/output/
-*.pyc
+# Python
 __pycache__/
-*.pyo
-.pytest_cache/
-.ruff_cache/
-# Standard-Ausgabeverzeichnis von GHDL Studio (siehe DEFAULT_OUTPUT_DIR in
-*.vcd
+*.py[cod]
+*.egg-info/
 .venv/
 venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+
+# OS / editor
+.DS_Store
+
+# GHDL / simulation artefacts
+# (also DEFAULT_OUTPUT_DIR / coverage / elaborated binary under output/)
+*.o
+*.cf
 work-obj*.cf
+*.vcd
+*.ghw
+*.gcda
+*.gcno
+*.log
+/output/
+
+# OSVVM Scripts output next to examples/adder/adder.pro
+examples/adder/VHDL_LIBS/
+examples/adder/adder/
+examples/adder/index.html
+examples/adder/index.yml
