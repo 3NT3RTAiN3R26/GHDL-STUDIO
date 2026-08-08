@@ -10,6 +10,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QComboBox,
+    QDialog,
     QDockWidget,
     QFileDialog,
     QHBoxLayout,
@@ -254,30 +255,37 @@ class MainWindow(QMainWindow):
         self._all_action.setVisible(not osvvm)
         self._build_pro_action.setVisible(osvvm)
         self._add_files_action.setEnabled(not osvvm)
-        self._open_pro_action.setEnabled(osvvm)
+        # Always allow opening a .pro (switches into OSVVM mode).
+        self._open_pro_action.setEnabled(True)
         self._file_explorer.setEnabled(not osvvm)
         if hasattr(self, "_simulation_bar"):
             self._simulation_bar.setVisible(not osvvm)
 
-        if osvvm and self._pro_path:
-            name = Path(self._pro_path).name
+        if osvvm:
+            name = Path(self._pro_path).name if self._pro_path else "(no .pro)"
             self.setWindowTitle(f"GHDL Studio — OSVVM: {name}")
-            self._log_console.append_output(
-                f"OSVVM mode: {self._pro_path}\n"
-                "Use Simulation → Build .pro (OSVVM). "
-                "Requires tclsh and Settings → OSVVM Scripts path "
-                "(directory with StartUp.tcl)."
-            )
-            self._settings.last_pro_file = self._pro_path
-            self._settings.last_project_dir = str(Path(self._pro_path).parent)
             self._settings.startup_mode = MODE_OSVVM
+            if self._pro_path:
+                self._log_console.append_output(
+                    f"OSVVM mode: {self._pro_path}\n"
+                    "Use Simulation → Build .pro (OSVVM). "
+                    "Requires tclsh and Settings → OSVVM Scripts path "
+                    "(directory with StartUp.tcl)."
+                )
+                self._settings.last_pro_file = self._pro_path
+                self._settings.last_project_dir = str(Path(self._pro_path).parent)
+            else:
+                self._log_console.append_output(
+                    "OSVVM mode active, but no .pro file is selected. "
+                    "Use File → Open .pro…"
+                )
         else:
             self.setWindowTitle("GHDL Studio — Normal GHDL")
             self._settings.startup_mode = MODE_NORMAL
 
     def _on_switch_mode(self) -> None:
         dialog = StartupModeDialog(self._settings, self)
-        if dialog.exec() != StartupModeDialog.DialogCode.Accepted:
+        if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         dialog.apply_to_settings()
         self._mode = dialog.selected_mode

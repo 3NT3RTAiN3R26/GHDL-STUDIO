@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 
 from ghdl_studio.main_window import MainWindow
 from ghdl_studio.osvvm_commands import MODE_NORMAL, MODE_OSVVM
@@ -16,22 +17,24 @@ from ghdl_studio.widgets.startup_mode_dialog import StartupModeDialog
 
 def _resolve_session(settings: AppSettings) -> tuple[str, str] | None:
     """Return ``(mode, pro_path)`` or ``None`` if the user cancelled."""
-    if settings.remember_startup_mode:
+    # QSettings may return 0/1 or "true"/"false" depending on platform.
+    if bool(settings.remember_startup_mode):
         mode = settings.startup_mode
         if mode == MODE_OSVVM:
-            pro = settings.last_pro_file
-            if pro:
-                return mode, pro
-            # Remembered OSVVM without a .pro — fall through to the dialog.
-        else:
+            pro = (settings.last_pro_file or "").strip()
+            if pro and Path(pro).expanduser().is_file():
+                return MODE_OSVVM, str(Path(pro).expanduser().resolve())
+            # Remembered OSVVM without a valid .pro — fall through to dialog.
+        elif mode == MODE_NORMAL:
             return MODE_NORMAL, ""
 
     dialog = StartupModeDialog(settings)
-    if dialog.exec() != StartupModeDialog.DialogCode.Accepted:
+    if dialog.exec() != QDialog.DialogCode.Accepted:
         return None
     dialog.apply_to_settings()
     if dialog.selected_mode == MODE_OSVVM:
-        return MODE_OSVVM, dialog.selected_pro_file
+        pro = dialog.selected_pro_file.strip()
+        return MODE_OSVVM, str(Path(pro).expanduser().resolve())
     return MODE_NORMAL, ""
 
 

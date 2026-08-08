@@ -163,11 +163,18 @@ class AppSettings:
 
     @property
     def remember_startup_mode(self) -> bool:
-        return self._settings.value("remember_startup_mode", False, bool)
+        value = self._settings.value("remember_startup_mode", False)
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return bool(value)
+        if isinstance(value, str):
+            return value.strip().lower() in ("1", "true", "yes", "on")
+        return False
 
     @remember_startup_mode.setter
     def remember_startup_mode(self, value: bool) -> None:
-        self._set("remember_startup_mode", value)
+        self._set("remember_startup_mode", bool(value))
 
     @property
     def last_pro_file(self) -> str:

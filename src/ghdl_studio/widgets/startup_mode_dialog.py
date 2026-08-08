@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
@@ -14,13 +13,14 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QRadioButton,
     QVBoxLayout,
     QWidget,
 )
 
-from ghdl_studio.osvvm_commands import MODE_NORMAL, MODE_OSVVM
+from ghdl_studio.osvvm_commands import MODE_NORMAL, MODE_OSVVM, is_pro_file
 from ghdl_studio.settings import AppSettings
 
 
@@ -51,11 +51,12 @@ class StartupModeDialog(QDialog):
 
         self._pro_edit = QLineEdit(settings.last_pro_file, self)
         self._pro_edit.setPlaceholderText("Path to project.pro")
-        pro_browse = QPushButton("Browse...", self)
-        pro_browse.clicked.connect(self._on_browse_pro)
+        self._pro_edit.textChanged.connect(self._on_pro_text_changed)
+        self._pro_browse = QPushButton("Browse...", self)
+        self._pro_browse.clicked.connect(self._on_browse_pro)
         pro_row = QHBoxLayout()
         pro_row.addWidget(self._pro_edit)
-        pro_row.addWidget(pro_browse)
+        pro_row.addWidget(self._pro_browse)
         self._pro_hint = QLabel(
             "Requires tclsh and OSVVM Scripts (StartUp.tcl). "
             "Configure paths under Settings if needed.",
@@ -67,9 +68,12 @@ class StartupModeDialog(QDialog):
         self._remember_check = QCheckBox(
             "Remember this choice and do not ask at startup", self
         )
-        self._remember_check.setChecked(settings.remember_startup_mode)
+        self._remember_check.setChecked(bool(settings.remember_startup_mode))
 
-        if settings.startup_mode == MODE_OSVVM:
+        # Prefer OSVVM if a .pro was used last time, or if remember says so.
+        if settings.startup_mode == MODE_OSVVM or (
+            settings.last_pro_file and is_pro_file(settings.last_pro_file)
+        ):
             self._osvvm_radio.setChecked(True)
         else:
             self._normal_radio.setChecked(True)
@@ -93,18 +97,31 @@ class StartupModeDialog(QDialog):
         layout.addWidget(self._pro_hint)
         layout.addWidget(self._remember_check)
         layout.addWidget(buttons)
-        self.resize(520, 280)
+        self.resize(560, 300)
 
     def _update_pro_enabled(self) -> None:
         enabled = self._osvvm_radio.isChecked()
+        # Keep Browse always clickable so picking a .pro can switch mode.
         self._pro_edit.setEnabled(enabled)
+        self._pro_browse.setEnabled(True)
         self._pro_hint.setEnabled(enabled)
+
+    def _select_osvvm_mode(self) -> None:
+        """Ensure the OSVVM radio is checked (e.g. after picking a .pro)."""
+        if not self._osvvm_radio.isChecked():
+            self._osvvm_radio.setChecked(True)
+
+    def _on_pro_text_changed(self, text: str) -> None:
+        if text.strip() and is_pro_file(text.strip()):
+            self._select_osvvm_mode()
 
     def _on_browse_pro(self) -> None:
         start_dir = ""
         current = self._pro_edit.text().strip()
         if current:
-            start_dir = str(Path(current).expanduser().parent)
+            parent = Path(current).expanduser().parent
+            if parent.is_dir():
+                start_dir = str(parent)
         elif self._settings.last_project_dir:
             start_dir = self._settings.last_project_dir
         path, _ = QFileDialog.getOpenFileName(
@@ -114,15 +131,42 @@ class StartupModeDialog(QDialog):
             "OSVVM project (*.pro);;All files (*)",
         )
         if path:
+            # Selecting a .pro always means OSVVM mode for this session.
+            self._select_osvvm_mode()
             self._pro_edit.setText(path)
 
     def _on_accept(self) -> None:
+        # If a .pro path is filled in, treat OK as OSVVM even if the user
+        # never clicked the radio (common when using Browse first).
+        pro = self._pro_edit.text().strip()
+        if pro and is_pro_file(pro):
+            self._select_osvvm_mode()
+
         if self._osvvm_radio.isChecked():
-            pro = self._pro_edit.text().strip()
             if not pro:
+                QMessageBox.warning(
+                    self,
+                    "No .pro file",
+                    "Please select an OSVVM .pro file (Browse…), "
+                    "or choose Normal GHDL mode instead.",
+                )
                 self._pro_edit.setFocus()
                 return
-            if not Path(pro).expanduser().is_file():
+            expanded = Path(pro).expanduser()
+            if not expanded.is_file():
+                QMessageBox.warning(
+                    self,
+                    "File not found",
+                    f"The .pro file does not exist:\n{expanded}",
+                )
+                self._pro_edit.setFocus()
+                return
+            if not is_pro_file(str(expanded)):
+                QMessageBox.warning(
+                    self,
+                    "Not a .pro file",
+                    "Please choose a file with the .pro extension.",
+                )
                 self._pro_edit.setFocus()
                 return
         self.accept()
