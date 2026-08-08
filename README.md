@@ -222,6 +222,10 @@ ghdl-studio
    GHDL Studio also creates `OsvvmTemp_GHDL/OsvvmRun.yml` in the project
    directory before Run if it is missing
 
+Successful run of `adder_tb` (13 OSVVM affirmations passed), with waveforms and Output log:
+
+![GHDL Studio running the adder OSVVM testbench — all checks PASSED](docs/images/adder_osvvm_run.png)
+
 ## Development & tests
 
 The modules `ghdl_commands.py` and `vcd_parser.py` have no Qt dependencies and
