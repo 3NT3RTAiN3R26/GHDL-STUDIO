@@ -330,9 +330,10 @@ Files in `examples/adder/`:
    (`SetSaveWaves` writes a `.ghw` when possible). The first build compiles
    OSVVM and takes longer; later runs reuse `VHDL_LIBS/`.
 
-Successful run of `adder_tb` (13 OSVVM affirmations passed), with waveforms and Output log:
+Successful **OSVVM mode** run of `examples/adder/adder.pro`
+(**Build .pro (OSVVM)** — 13 affirmations passed, exit code 0):
 
-![GHDL Studio running the adder OSVVM testbench — all checks PASSED](docs/images/adder_osvvm_run.png)
+![GHDL Studio OSVVM mode: adder.pro build PASSED](docs/images/adder_osvvm_run.png)
 
 ## Development & tests
 
