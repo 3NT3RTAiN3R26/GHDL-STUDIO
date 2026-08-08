@@ -1,11 +1,13 @@
 from ghdl_studio.ghdl_commands import (
     DEFAULT_ANALYZE_EXTRA_ARGS,
     DEFAULT_ELABORATE_EXTRA_ARGS,
+    DEFAULT_OUTPUT_DIR,
     DEFAULT_RUN_EXTRA_ARGS,
     RunOptions,
     build_analyze_args,
     build_elaborate_args,
     build_run_args,
+    clean_output_dir,
     parse_ghdl_version,
 )
 
@@ -102,6 +104,55 @@ def test_build_elaborate_args_with_default_gcc_backend_flags():
         "-fPIE",
         "counter_tb",
     ]
+
+
+def test_run_options_default_output_dir():
+    options = RunOptions()
+    assert options.output_dir == DEFAULT_OUTPUT_DIR == "output"
+
+
+def test_run_options_vcd_filename_and_path():
+    options = RunOptions(top_unit="counter_tb", output_dir="output")
+    assert options.vcd_filename() == "counter_tb.vcd"
+    assert options.vcd_path() == "output/counter_tb.vcd"
+
+
+def test_run_options_vcd_path_uses_custom_output_dir():
+    options = RunOptions(top_unit="counter_tb", output_dir="my_build")
+    assert options.vcd_path() == "my_build/counter_tb.vcd"
+
+
+def test_clean_output_dir_removes_all_entries(tmp_path):
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    (output_dir / "counter_tb.vcd").write_text("dummy")
+    (output_dir / "counter_tb.o").write_text("dummy")
+    (output_dir / "counter_tb.gcda").write_text("dummy")
+    (output_dir / "counter_tb.gcno").write_text("dummy")
+    (output_dir / "work-obj08.cf").write_text("dummy")
+    (output_dir / "counter_tb").write_text("dummy")  # simulierte Executable
+    sub_dir = output_dir / "some_subdir"
+    sub_dir.mkdir()
+    (sub_dir / "nested.txt").write_text("dummy")
+
+    removed = clean_output_dir(str(output_dir))
+
+    assert output_dir.exists()  # Verzeichnis selbst bleibt bestehen
+    assert list(output_dir.iterdir()) == []
+    assert set(removed) == {
+        "counter_tb.vcd",
+        "counter_tb.o",
+        "counter_tb.gcda",
+        "counter_tb.gcno",
+        "work-obj08.cf",
+        "counter_tb",
+        "some_subdir",
+    }
+
+
+def test_clean_output_dir_nonexistent_directory_returns_empty(tmp_path):
+    missing = tmp_path / "does_not_exist"
+    assert clean_output_dir(str(missing)) == []
 
 
 def test_build_run_args_extra_args_precede_unit_name():

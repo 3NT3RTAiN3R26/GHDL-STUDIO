@@ -15,6 +15,14 @@ from pathlib import Path
 VHDL_STANDARDS = ("87", "93", "93c", "00", "02", "08")
 DEFAULT_STD = "08"
 
+# Name des Ausgabeverzeichnisses, in dem alle von GHDL generierten Dateien
+# landen (Work-Bibliothek work-obj*.cf, Objektdateien *.o, VCD-Dumps *.vcd,
+# Coverage-Daten *.gcda/*.gcno sowie die elaborierte Simulations-
+# Executable), damit das Projekt-Wurzelverzeichnis nicht zugemuellt wird.
+# Relativ zum Arbeitsverzeichnis, aus dem GHDL Studio gestartet wurde
+# (sofern kein absoluter Pfad konfiguriert ist).
+DEFAULT_OUTPUT_DIR = "output"
+
 # Werden standardmaessig bei jedem "ghdl -a" mitgegeben. Sinnvoll z. B. fuer
 # GHDL-Builds mit dem GCC-Backend, bei denen Coverage-Instrumentierung
 # (gcov) und PIE-Kompatibilitaet gewuenscht sind. Ueber den
@@ -154,13 +162,49 @@ class RunOptions:
 
     top_unit: str = ""
     std: str = DEFAULT_STD
-    work_dir: str | None = None
+    output_dir: str = DEFAULT_OUTPUT_DIR
     stop_time: str | None = None
     generics: dict[str, str] = field(default_factory=dict)
     extra_analyze_args: list[str] = field(default_factory=lambda: list(DEFAULT_ANALYZE_EXTRA_ARGS))
     extra_elaborate_args: list[str] = field(default_factory=lambda: list(DEFAULT_ELABORATE_EXTRA_ARGS))
     extra_run_args: list[str] = field(default_factory=lambda: list(DEFAULT_RUN_EXTRA_ARGS))
 
+    def vcd_filename(self) -> str:
+        """Bare Dateiname der VCD-Datei (fuer den ``--vcd=``-Parameter,
+        relativ zum Ausgabeverzeichnis, das als Arbeitsverzeichnis des
+        GHDL-Prozesses genutzt wird)."""
+        return f"{self.top_unit}.vcd"
+
     def vcd_path(self) -> str:
-        base = Path(self.work_dir) if self.work_dir else Path(".")
-        return str(base / f"{self.top_unit}.vcd")
+        """Pfad zur VCD-Datei relativ zum Arbeitsverzeichnis von GHDL Studio
+        selbst (fuer das Einlesen/Anzeigen der Simulationsergebnisse)."""
+        return str(Path(self.output_dir) / self.vcd_filename())
+
+
+def clean_output_dir(output_dir: str) -> list[str]:
+    """Entfernt alle generierten Build-Artefakte aus dem Ausgabeverzeichnis.
+
+    Analog zu einem ``clean``-Ziel in einem GHDL-Makefile: loescht den
+    kompletten Inhalt des Ausgabeverzeichnisses (Work-Bibliothek
+    ``work-obj*.cf``, Objektdateien ``*.o``, VCD-Dumps ``*.vcd``,
+    Coverage-Daten ``*.gcda``/``*.gcno`` sowie die elaborierte
+    Simulations-Executable), ohne das Verzeichnis selbst zu entfernen.
+    Nicht vorhandene Verzeichnisse werden stillschweigend ignoriert.
+
+    Gibt die Namen der entfernten Eintraege zurueck (fuer Logging-Zwecke).
+    """
+    path = Path(output_dir)
+    if not path.exists() or not path.is_dir():
+        return []
+
+    removed: list[str] = []
+    for entry in sorted(path.iterdir()):
+        removed.append(entry.name)
+        if entry.is_dir():
+            shutil.rmtree(entry, ignore_errors=True)
+        else:
+            try:
+                entry.unlink()
+            except OSError:
+                continue
+    return removed
