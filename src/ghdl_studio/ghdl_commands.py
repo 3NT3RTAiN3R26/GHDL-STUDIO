@@ -128,6 +128,7 @@ def build_run_args(
     std: str = DEFAULT_STD,
     work_dir: str | None = None,
     vcd_path: str | None = None,
+    wave_path: str | None = None,
     stop_time: str | None = None,
     generics: dict[str, str] | None = None,
     extra_args: list[str] | None = None,
@@ -136,9 +137,10 @@ def build_run_args(
 
     Laut GHDL-Syntax ``-r <[options...] unit [simulation_options...]>``
     muessen allgemeine Optionen wie ``-fsynopsys`` VOR dem Unit-Namen stehen,
-    waehrend Generics, ``--vcd=`` und ``--stop-time=`` als Simulationsoptionen
-    NACH dem Unit-Namen folgen. ``extra_args`` wird daher vor dem Unit-Namen
-    eingefuegt, analog zu ``build_analyze_args``/``build_elaborate_args``.
+    waehrend Generics, ``--vcd=``, ``--wave=`` und ``--stop-time=`` als
+    Simulationsoptionen NACH dem Unit-Namen folgen. ``extra_args`` wird
+    daher vor dem Unit-Namen eingefuegt, analog zu
+    ``build_analyze_args``/``build_elaborate_args``.
     """
     if not unit:
         raise ValueError("Es muss eine Top-Level-Entity angegeben werden.")
@@ -151,6 +153,8 @@ def build_run_args(
         args.append(f"-g{key}={value}")
     if vcd_path:
         args.append(f"--vcd={vcd_path}")
+    if wave_path:
+        args.append(f"--wave={wave_path}")
     if stop_time:
         args.append(f"--stop-time={stop_time}")
     return args
@@ -180,14 +184,22 @@ class RunOptions:
         selbst (fuer das Einlesen/Anzeigen der Simulationsergebnisse)."""
         return str(Path(self.output_dir) / self.vcd_filename())
 
+    def ghw_filename(self) -> str:
+        """Bare Dateiname der GHW-Wave-Datei (fuer den ``--wave=``-Parameter)."""
+        return f"{self.top_unit}.ghw"
+
+    def ghw_path(self) -> str:
+        """Pfad zur GHW-Datei relativ zum Arbeitsverzeichnis von GHDL Studio."""
+        return str(Path(self.output_dir) / self.ghw_filename())
+
 
 def clean_output_dir(output_dir: str) -> list[str]:
     """Entfernt alle generierten Build-Artefakte aus dem Ausgabeverzeichnis.
 
     Analog zu einem ``clean``-Ziel in einem GHDL-Makefile: loescht den
     kompletten Inhalt des Ausgabeverzeichnisses (Work-Bibliothek
-    ``work-obj*.cf``, Objektdateien ``*.o``, VCD-Dumps ``*.vcd``,
-    Coverage-Daten ``*.gcda``/``*.gcno`` sowie die elaborierte
+    ``work-obj*.cf``, Objektdateien ``*.o``, Waveform-Dumps ``*.vcd``/
+    ``*.ghw``, Coverage-Daten ``*.gcda``/``*.gcno`` sowie die elaborierte
     Simulations-Executable), ohne das Verzeichnis selbst zu entfernen.
     Nicht vorhandene Verzeichnisse werden stillschweigend ignoriert.
 

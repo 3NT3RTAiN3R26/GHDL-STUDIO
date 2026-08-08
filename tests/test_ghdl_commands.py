@@ -43,6 +43,7 @@ def test_build_run_args_with_vcd_and_generics():
         "counter_tb",
         std="08",
         vcd_path="out.vcd",
+        wave_path="out.ghw",
         stop_time="200ns",
         generics={"WIDTH": "8"},
     )
@@ -52,6 +53,7 @@ def test_build_run_args_with_vcd_and_generics():
         "counter_tb",
         "-gWIDTH=8",
         "--vcd=out.vcd",
+        "--wave=out.ghw",
         "--stop-time=200ns",
     ]
 
@@ -115,17 +117,21 @@ def test_run_options_vcd_filename_and_path():
     options = RunOptions(top_unit="counter_tb", output_dir="output")
     assert options.vcd_filename() == "counter_tb.vcd"
     assert options.vcd_path() == "output/counter_tb.vcd"
+    assert options.ghw_filename() == "counter_tb.ghw"
+    assert options.ghw_path() == "output/counter_tb.ghw"
 
 
 def test_run_options_vcd_path_uses_custom_output_dir():
     options = RunOptions(top_unit="counter_tb", output_dir="my_build")
     assert options.vcd_path() == "my_build/counter_tb.vcd"
+    assert options.ghw_path() == "my_build/counter_tb.ghw"
 
 
 def test_clean_output_dir_removes_all_entries(tmp_path):
     output_dir = tmp_path / "output"
     output_dir.mkdir()
     (output_dir / "counter_tb.vcd").write_text("dummy")
+    (output_dir / "counter_tb.ghw").write_text("dummy")
     (output_dir / "counter_tb.o").write_text("dummy")
     (output_dir / "counter_tb.gcda").write_text("dummy")
     (output_dir / "counter_tb.gcno").write_text("dummy")
@@ -141,6 +147,7 @@ def test_clean_output_dir_removes_all_entries(tmp_path):
     assert list(output_dir.iterdir()) == []
     assert set(removed) == {
         "counter_tb.vcd",
+        "counter_tb.ghw",
         "counter_tb.o",
         "counter_tb.gcda",
         "counter_tb.gcno",
@@ -158,10 +165,11 @@ def test_clean_output_dir_nonexistent_directory_returns_empty(tmp_path):
 def test_build_run_args_extra_args_precede_unit_name():
     # -fsynopsys ist eine allgemeine GHDL-Option und muss laut Syntax
     # "-r <[options...] unit [simulation_options...]>" VOR dem Unit-Namen
-    # stehen, waehrend Generics/--vcd=/--stop-time= DANACH folgen.
+    # stehen, waehrend Generics/--vcd=/--wave=/--stop-time= DANACH folgen.
     args = build_run_args(
         "counter_tb",
         vcd_path="out.vcd",
+        wave_path="out.ghw",
         stop_time="200ns",
         generics={"WIDTH": "8"},
         extra_args=list(DEFAULT_RUN_EXTRA_ARGS),
@@ -173,5 +181,6 @@ def test_build_run_args_extra_args_precede_unit_name():
         "counter_tb",
         "-gWIDTH=8",
         "--vcd=out.vcd",
+        "--wave=out.ghw",
         "--stop-time=200ns",
     ]

@@ -389,13 +389,14 @@ class MainWindow(QMainWindow):
             )
             return
         output_dir = self._ensure_output_dir()
-        # GHDL laeuft mit output_dir als Arbeitsverzeichnis, daher genuegt
-        # als --vcd=-Argument der bare Dateiname (sonst wuerde das
+        # GHDL laeuft mit output_dir als Arbeitsverzeichnis, daher genuegen
+        # als --vcd=/--wave=-Argumente die baren Dateinamen (sonst wuerde das
         # Ausgabeverzeichnis doppelt im Pfad auftauchen).
         args = build_run_args(
             self._run_options.top_unit,
             std=self._run_options.std,
             vcd_path=self._run_options.vcd_filename(),
+            wave_path=self._run_options.ghw_filename(),
             stop_time=self._run_options.stop_time,
             generics=self._run_options.generics,
             extra_args=self._run_options.extra_run_args,
