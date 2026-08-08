@@ -293,6 +293,16 @@ ghdl-studio
 
 ### Adder (OSVVM testbench)
 
+Files in `examples/adder/`:
+
+| File | Role |
+|------|------|
+| `adder.vhd` | DUT |
+| `adder_tb.vhd` | OSVVM AffirmIfEqual testbench |
+| `adder.pro` | OSVVM Scripts build (for **OSVVM mode**) |
+
+#### Normal GHDL mode (manual files + `-P`)
+
 1. Precompile OSVVM for GHDL (vendor script or OSVVM TCL) and set
    **Settings → OSVVM lib path** to the directory that contains the compiled
    OSVVM libraries (`-P` search path)
@@ -303,6 +313,16 @@ ghdl-studio
 5. The Output dock shows OSVVM transcript lines (`%% … Log … PASSED …`);
    GHDL Studio also creates `OsvvmTemp_GHDL/OsvvmRun.yml` in the project
    directory before Run if it is missing
+
+#### OSVVM mode (`.pro` / TCL)
+
+1. Install `tclsh` and an [OSVVM Libraries](https://github.com/OSVVM) checkout;
+   build the utility library once (`build …/osvvm` after `source …/Scripts/StartUp.tcl`)
+2. Settings → **TCL executable** + **OSVVM Scripts path**
+   (`…/OsvvmLibraries/Scripts` or `…/OsvvmLibraries`)
+3. At startup choose **OSVVM mode** and select `examples/adder/adder.pro`
+4. **Simulation → Build .pro (OSVVM)** — runs `analyze` / `simulate adder_tb`
+   (with `SetSaveWaves` so a `.ghw` can be opened afterwards)
 
 Successful run of `adder_tb` (13 OSVVM affirmations passed), with waveforms and Output log:
 
