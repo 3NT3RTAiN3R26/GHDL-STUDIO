@@ -224,6 +224,69 @@ def _find_window_id_for_pid_x11(pid: int):
             pass
 
 
+def _to_win32_long(value: int) -> int:
+    """Normiert einen Python-Int auf den Wertebereich von Win32 ``LONG``
+    (signed 32-bit).
+
+    Bitweise Operationen auf Fensterstilen (z. B. ``style &= ~WS_POPUP``)
+    erzeugen in Python 3 leicht Werte ausserhalb von ``[-2^31, 2^31)``,
+    obwohl die unteren 32 Bit korrekt sind. ``ctypes`` unter Windows lehnt
+    solche Werte beim Aufruf von ``SetWindowLongW`` dann mit
+    ``OverflowError: int too long to convert`` (typischerweise an
+    Argument 3) ab.
+    """
+    unsigned_32 = int(value) & 0xFFFFFFFF
+    return unsigned_32 - 0x100000000 if unsigned_32 >= 0x80000000 else unsigned_32
+
+
+def _configure_user32_winapi(user32) -> None:
+    """Setzt ``argtypes``/``restype`` fuer die genutzten user32-Funktionen,
+    damit 64-bit-``HWND``-Werte und 32-bit-``LONG``-Stile korrekt
+    konvertiert werden (ohne ``argtypes`` nimmt ``ctypes.windll`` fuer
+    Integer standardmaessig ``c_int``, was bei grossen Handles oder
+    falsch normierten Stilen zu ``OverflowError`` fuehrt)."""
+    import ctypes
+    from ctypes import wintypes
+
+    if getattr(user32, "_ghdl_studio_configured", False):
+        return
+
+    user32.IsWindow.argtypes = [wintypes.HWND]
+    user32.IsWindow.restype = wintypes.BOOL
+    user32.IsWindowVisible.argtypes = [wintypes.HWND]
+    user32.IsWindowVisible.restype = wintypes.BOOL
+    user32.GetWindowTextLengthW.argtypes = [wintypes.HWND]
+    user32.GetWindowTextLengthW.restype = ctypes.c_int
+    user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, wintypes.LPDWORD]
+    user32.GetWindowThreadProcessId.restype = wintypes.DWORD
+    user32.GetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int]
+    user32.GetWindowLongW.restype = wintypes.LONG
+    user32.SetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int, wintypes.LONG]
+    user32.SetWindowLongW.restype = wintypes.LONG
+    user32.SetParent.argtypes = [wintypes.HWND, wintypes.HWND]
+    user32.SetParent.restype = wintypes.HWND
+    user32.SetWindowPos.argtypes = [
+        wintypes.HWND,
+        wintypes.HWND,
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.c_int,
+        wintypes.UINT,
+    ]
+    user32.SetWindowPos.restype = wintypes.BOOL
+    user32.MoveWindow.argtypes = [
+        wintypes.HWND,
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.c_int,
+        wintypes.BOOL,
+    ]
+    user32.MoveWindow.restype = wintypes.BOOL
+    user32._ghdl_studio_configured = True  # type: ignore[attr-defined]
+
+
 def _find_hwnd_for_pid_windows(pid: int):
     """Einmaliger Versuch, das sichtbare Top-Level-Fenster eines Prozesses
     unter Windows per WinAPI zu finden."""
@@ -231,9 +294,10 @@ def _find_hwnd_for_pid_windows(pid: int):
     from ctypes import wintypes
 
     user32 = ctypes.windll.user32  # type: ignore[attr-defined]
+    _configure_user32_winapi(user32)
     found: list[int] = []
 
-    @ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
     def _callback(hwnd, _lparam):
         pid_out = wintypes.DWORD()
         user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid_out))
@@ -274,6 +338,7 @@ class _Win32ChildResizeSync(QObject):
         import ctypes
 
         user32 = ctypes.windll.user32  # type: ignore[attr-defined]
+        _configure_user32_winapi(user32)
         width = max(self._container.width(), 1)
         height = max(self._container.height(), 1)
         user32.MoveWindow(self._hwnd, 0, 0, width, height, True)
@@ -290,8 +355,10 @@ def _embed_foreign_window_windows(hwnd: int, container: QWidget) -> None:
     direkte WinAPI-Weg (``SetParent`` + Stiländerung) ist zuverlässiger.
     """
     import ctypes
+    from ctypes import wintypes
 
     user32 = ctypes.windll.user32  # type: ignore[attr-defined]
+    _configure_user32_winapi(user32)
 
     gwl_style = -16
     gwl_exstyle = -20
@@ -321,14 +388,17 @@ def _embed_foreign_window_windows(hwnd: int, container: QWidget) -> None:
     if not container_hwnd:
         raise OSError("Qt-Container besitzt kein natives Fenster-Handle.")
 
-    style = user32.GetWindowLongW(hwnd, gwl_style)
-    style &= ~(ws_popup | ws_caption | ws_thickframe | ws_sysmenu | ws_minimizebox | ws_maximizebox)
-    style |= ws_child | ws_visible
-    user32.SetWindowLongW(hwnd, gwl_style, style)
+    # Fensterstile immer ueber unsigned-32-Bit-Arithmetik berechnen und erst
+    # danach auf signed LONG normieren - sonst OverflowError unter Win64.
+    style_bits = int(user32.GetWindowLongW(hwnd, gwl_style)) & 0xFFFFFFFF
+    clear_bits = ws_popup | ws_caption | ws_thickframe | ws_sysmenu | ws_minimizebox | ws_maximizebox
+    style_bits = (style_bits & ~clear_bits & 0xFFFFFFFF) | ws_child | ws_visible
+    user32.SetWindowLongW(hwnd, gwl_style, _to_win32_long(style_bits))
 
-    ex_style = user32.GetWindowLongW(hwnd, gwl_exstyle)
-    ex_style &= ~(ws_ex_dlgmodalframe | ws_ex_windowedge | ws_ex_clientedge | ws_ex_appwindow)
-    user32.SetWindowLongW(hwnd, gwl_exstyle, ex_style)
+    ex_bits = int(user32.GetWindowLongW(hwnd, gwl_exstyle)) & 0xFFFFFFFF
+    ex_clear = ws_ex_dlgmodalframe | ws_ex_windowedge | ws_ex_clientedge | ws_ex_appwindow
+    ex_bits = ex_bits & ~ex_clear & 0xFFFFFFFF
+    user32.SetWindowLongW(hwnd, gwl_exstyle, _to_win32_long(ex_bits))
 
     previous_parent = user32.SetParent(hwnd, container_hwnd)
     if not previous_parent:
@@ -336,7 +406,7 @@ def _embed_foreign_window_windows(hwnd: int, container: QWidget) -> None:
 
     user32.SetWindowPos(
         hwnd,
-        None,
+        wintypes.HWND(0),
         0,
         0,
         max(container.width(), 1),
@@ -454,13 +524,18 @@ class GtkWaveEmbedder(QObject):
     def _finish_embedding(self, win_id: int) -> None:
         if sys.platform.startswith("win"):
             # Unter Windows wird zunaechst ein leerer, natives Qt-Widget
-            # als Container erzeugt und sofort eingehaengt (damit Layout
-            # und Groesse korrekt gesetzt werden), das eigentliche
-            # SetParent() erfolgt erst danach ueber einen 0ms-Timer, wenn
-            # der Container bereits eine belastbare Groesse hat.
-            container = QWidget()
+            # als Container erzeugt und in den Parent eingehaengt (damit
+            # Layout/Groesse/winId stimmen). Das eigentliche SetParent()
+            # erfolgt im naechsten Event-Loop-Tick. ``embedded`` wird erst
+            # nach erfolgreichem SetParent gesendet, damit die GUI keinen
+            # falschen Erfolgsstatus zeigt, falls die WinAPI-Einbettung
+            # fehlschlaegt.
+            container = QWidget(self._parent_widget)
             container.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
-            self.embedded.emit(container)
+            parent = self._parent_widget
+            if parent is not None and parent.layout() is not None:
+                parent.layout().addWidget(container)
+            container.show()
             QTimer.singleShot(0, lambda: self._finish_embedding_windows(win_id, container))
             return
 
@@ -475,4 +550,11 @@ class GtkWaveEmbedder(QObject):
         try:
             _embed_foreign_window_windows(hwnd, container)
         except Exception as exc:  # noqa: BLE001 - dem Nutzer die Ursache anzeigen
+            parent = container.parentWidget()
+            if parent is not None and parent.layout() is not None:
+                parent.layout().removeWidget(container)
+            container.hide()
+            container.deleteLater()
             self.failed.emit(f"GTKWave-Fenster konnte nicht eingebettet werden: {exc}")
+            return
+        self.embedded.emit(container)

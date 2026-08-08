@@ -81,7 +81,9 @@ class MainWindow(QMainWindow):
         self._gtkwave_container: QWidget | None = None
 
         self._waveform_status_label = QLabel(self)
-        self._waveform_status_label.setStyleSheet("QLabel { padding: 2px 6px; color: #555; }")
+        self._waveform_status_label.setStyleSheet(
+            "QLabel { padding: 2px 6px; color: #cccccc; background: transparent; }"
+        )
         self._waveform_status_label.setText("Noch keine Simulation ausgefuehrt.")
         self._waveform_status_label.setWordWrap(True)
 
@@ -514,15 +516,21 @@ class MainWindow(QMainWindow):
             self._gtkwave_container = None
 
     def _on_gtkwave_embedded(self, container: QWidget) -> None:
-        self._clear_gtkwave_container()
-        self._gtkwave_container = container
-        self._gtkwave_page_layout.addWidget(container)
+        # Unter Windows kann der Container bereits vom Embedder in das Layout
+        # gehaengt worden sein (noetig fuer ein gueltiges natives winId vor
+        # SetParent). clear + addWidget ist in beiden Faellen idempotent.
+        if container is not self._gtkwave_container:
+            self._clear_gtkwave_container()
+            self._gtkwave_container = container
+            if self._gtkwave_page_layout.indexOf(container) < 0:
+                self._gtkwave_page_layout.addWidget(container)
         self._waveform_stack.setCurrentIndex(_WAVEFORM_PAGE_GTKWAVE)
         self._waveform_status_label.setText("Wellenform-Anzeige: GTKWave (eingebettet).")
         self._gtkwave_retry_button.setVisible(False)
         self._log_console.append_success("GTKWave wurde erfolgreich in den Wellenformen-Tab eingebettet.")
 
     def _on_gtkwave_failed(self, reason: str) -> None:
+        self._clear_gtkwave_container()
         self._waveform_status_label.setText(f"Wellenform-Anzeige: interner Viewer (GTKWave: {reason})")
         self._log_console.append_output(f"GTKWave-Einbettung nicht verfuegbar: {reason}")
         self._waveform_stack.setCurrentIndex(_WAVEFORM_PAGE_INTERNAL)

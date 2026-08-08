@@ -11,6 +11,7 @@ QtWidgets = pytest.importorskip("PySide6.QtWidgets")
 from ghdl_studio.gtkwave_embed import (  # noqa: E402
     GtkWaveEmbedder,
     _collect_descendant_pids,
+    _to_win32_long,
     find_gtkwave_executable,
     is_embedding_supported,
     is_xlib_available,
@@ -69,6 +70,24 @@ def test_is_xlib_available_matches_real_import():
 def test_collect_descendant_pids_includes_root_pid():
     pids = _collect_descendant_pids(os.getpid())
     assert os.getpid() in pids
+
+
+def test_to_win32_long_maps_unsigned_styles_into_signed_32bit_range():
+    """Reproduziert den Windows-OverflowError bei SetWindowLongW-Arg 3:
+    Python-Ints aus Stil-Bitops muessen in signed 32-bit passen."""
+    # WS_POPUP|WS_VISIBLE-aehnliche Ausgangswerte und typische Child-Stile
+    assert _to_win32_long(0x96000000) == -1778384896
+    assert _to_win32_long(0x56000000) == 1442840576
+    assert _to_win32_long(-2852126720) == 1442840576  # untere 32 Bit von fehlerhaftem Python-Ergebnis
+    assert _to_win32_long(0x50000000 | 0x06000000) == _to_win32_long(0x56000000)
+
+    # Jeder normierte Wert muss als ctypes c_int32 darstellbar sein
+    import ctypes
+
+    for raw in (0x00000000, 0x16CF0000, 0x96CF0000, 0xFFFFFFFF, -1, -2852126720, 0x80000000):
+        normalized = _to_win32_long(raw)
+        assert -0x80000000 <= normalized <= 0x7FFFFFFF
+        assert ctypes.c_int32(normalized).value == normalized
 
 
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="/proc ist Linux-spezifisch")

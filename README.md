@@ -4,6 +4,9 @@ Eine plattformunabhängige grafische Oberfläche für [GHDL](https://ghdl.github
 den quelloffenen VHDL-Simulator. Entwickelt mit **Python** und **PySide6** (Qt for Python),
 läuft GHDL Studio unverändert unter Linux, Windows und macOS.
 
+Die Oberfläche nutzt auf **allen Betriebssystemen** ein einheitliches dunkles Theme
+(Fusion-Style + dunkle Palette), unabhängig vom System-Design.
+
 ## Funktionsumfang (aktueller Stand)
 
 - Verwaltung von Quelldateien in einem Projekt (hinzufügen/entfernen), sowohl **VHDL**
@@ -60,6 +63,7 @@ src/ghdl_studio/
 ├── vcd_parser.py             # Minimaler VCD-Parser + Zeitformatierung (Qt-frei, testbar)
 ├── vhdl_scanner.py            # Erkennung von VHDL-Entities/Verilog-Modulen (Qt-frei, testbar)
 ├── gtkwave_embed.py            # Natives Einbetten des GTKWave-Fensters (Linux/X11, Windows)
+├── theme.py                   # Dunkles Fusion-Theme (plattformuebergreifend)
 ├── settings.py                # Persistente Einstellungen (QSettings)
 └── widgets/
     ├── file_explorer.py       # Verwaltung der Projektdateien
@@ -105,11 +109,12 @@ betroffen), wird aber nicht in den Tab "Wellenformen" eingebettet. Mögliche Urs
    X11-Fensterbaum — trotzdem kann unter WSLg ein Retry nötig sein. Klicke in diesem
    Fall einfach auf den Button "GTKWave erneut versuchen", der nach einem Fehlschlag im
    Wellenformen-Tab erscheint.
-3. **Windows: Tab leer, GTKWave bleibt extern sichtbar.** Frühere Versionen meldeten
-   manchmal fälschlich eine erfolgreiche Einbettung, obwohl das Fenster weiterhin
-   eigenständig blieb (`QWindow.fromWinId` reicht bei Fremdfenstern oft nicht). Ab
-   dieser Version wird unter Windows per `SetParent` eingebettet. Bitte den aktuellen
-   Stand des Branches ziehen und erneut testen.
+3. **Windows: Tab leer, GTKWave bleibt extern sichtbar / `OverflowError: int too long to convert`.**
+   Frühere Versionen meldeten manchmal fälschlich eine erfolgreiche Einbettung, obwohl
+   das Fenster weiterhin eigenständig blieb (`QWindow.fromWinId` reicht bei Fremdfenstern
+   oft nicht). Die Einbettung erfolgt jetzt per `SetParent`; Fensterstile werden als
+   echte 32-bit-`LONG`-Werte an die WinAPI übergeben (behebt den OverflowError). Bitte
+   den aktuellen Stand des Branches ziehen und erneut testen.
 4. Nach einer Korrektur (z. B. `python-xlib` nachinstalliert) muss GHDL Studio **nicht**
    neu gestartet werden — der "Erneut versuchen"-Button startet GTKWave einfach erneut.
 
