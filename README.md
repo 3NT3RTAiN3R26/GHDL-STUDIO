@@ -77,6 +77,13 @@ tests/                        # Unit-Tests für die Qt-unabhängigen Module
 ## Voraussetzungen
 
 - Python 3.9 oder neuer
+- **Linux/WSL (Qt-xcb für Surfer-Einbettung):** zusätzlich
+  ```bash
+  sudo apt install libxcb-cursor0
+  ```
+  Ohne dieses Paket startet Qt 6.5+ mit dem xcb-Plugin nicht
+  (`xcb-cursor0 or libxcb-cursor0 is needed`). GHDL Studio versucht dann
+  ohne erzwungenes xcb zu starten (GUI läuft, Surfer-Einbettung ggf. nicht).
 - [GHDL](https://ghdl.github.io/ghdl/getting.html) muss installiert sein und im `PATH`
   liegen (oder der Pfad wird in den Einstellungen der GUI manuell angegeben).
   - Linux: über Paketmanager (z. B. `apt install ghdl`) oder von GitHub-Releases
@@ -123,11 +130,14 @@ betroffen), wird aber nicht in den Tab "Wellenformen" eingebettet. Mögliche Urs
    `pip install -r requirements.txt` erneut ausführen.
 3. **Langsamer Fenstermanager/Compositor** (z. B. unter WSLg): auf
    „Surfer erneut versuchen“ klicken.
-4. **`platform plugin does not support foreign windows` (WSL/Wayland):** GHDL Studio setzt
-   beim Start automatisch `QT_QPA_PLATFORM=xcb` (wenn `DISPLAY` gesetzt ist). App komplett
-   neu starten. Bei manuell gesetztem `QT_QPA_PLATFORM=wayland`: vorübergehend
-   `export QT_QPA_PLATFORM=xcb`.
-5. **Windows: Tab leer, Surfer bleibt extern:** Einbettung erfolgt per `SetParent` mit
+4. **App startet nicht: `libxcb-cursor0 is needed` / xcb-Plugin:**  
+   `sudo apt install libxcb-cursor0`, danach neu starten. Für Surfer-Einbettung
+   wird xcb benötigt.
+5. **`platform plugin does not support foreign windows` (WSL/Wayland):** GHDL Studio setzt
+   beim Start automatisch `QT_QPA_PLATFORM=xcb`, sofern `libxcb-cursor` gefunden wird.
+   App komplett neu starten. Bei manuell gesetztem `QT_QPA_PLATFORM=wayland`:
+   vorübergehend `export QT_QPA_PLATFORM=xcb` (nach Installation von `libxcb-cursor0`).
+6. **Windows: Tab leer, Surfer bleibt extern:** Einbettung erfolgt per `SetParent` mit
    korrekter 32-bit-`LONG`-Normierung — aktuellen Branch-Stand ziehen und erneut testen.
 
 ## Installation

@@ -73,13 +73,24 @@ def test_collect_descendant_pids_includes_root_pid():
     assert os.getpid() in pids
 
 
-def test_ensure_linux_xcb_platform_sets_xcb_when_display_present(monkeypatch):
+def test_ensure_linux_xcb_platform_sets_xcb_when_display_and_cursor_lib_present(monkeypatch):
     if not sys.platform.startswith("linux"):
         monkeypatch.setattr(sys, "platform", "linux")
     monkeypatch.delenv("QT_QPA_PLATFORM", raising=False)
     monkeypatch.setenv("DISPLAY", ":99")
+    monkeypatch.setattr("ghdl_studio.surfer_embed.is_xcb_cursor_available", lambda: True)
     ensure_linux_xcb_platform()
     assert os.environ.get("QT_QPA_PLATFORM") == "xcb"
+
+
+def test_ensure_linux_xcb_platform_skips_xcb_without_cursor_lib(monkeypatch):
+    if not sys.platform.startswith("linux"):
+        monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.delenv("QT_QPA_PLATFORM", raising=False)
+    monkeypatch.setenv("DISPLAY", ":99")
+    monkeypatch.setattr("ghdl_studio.surfer_embed.is_xcb_cursor_available", lambda: False)
+    ensure_linux_xcb_platform()
+    assert os.environ.get("QT_QPA_PLATFORM") is None
 
 
 def test_ensure_linux_xcb_platform_respects_existing_override(monkeypatch):

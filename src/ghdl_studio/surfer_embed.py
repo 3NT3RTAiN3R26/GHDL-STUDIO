@@ -56,22 +56,56 @@ def is_xlib_available() -> bool:
     return importlib.util.find_spec("Xlib") is not None
 
 
+def is_xcb_cursor_available() -> bool:
+    """Ob ``libxcb-cursor`` geladen werden kann (ab Qt 6.5 Pflicht fuer xcb).
+
+    Fehlt das Paket (Ubuntu/Debian: ``libxcb-cursor0``), bricht Qt beim
+    Laden des xcb-Plugins mit
+    ``From 6.5.0, xcb-cursor0 or libxcb-cursor0 is needed…`` ab.
+    """
+    if not sys.platform.startswith("linux"):
+        return False
+    try:
+        import ctypes.util
+
+        # Verschiedene Distros liefern den Soname als libxcb-cursor.so.0
+        # bzw. finden ihn ueber find_library("xcb-cursor").
+        if ctypes.util.find_library("xcb-cursor"):
+            return True
+        ctypes.CDLL("libxcb-cursor.so.0")
+        return True
+    except OSError:
+        return False
+
+
 def ensure_linux_xcb_platform() -> None:
     """Bevorzugt das Qt-``xcb``-Plugin unter Linux, sofern der Nutzer nichts
-    anderes gesetzt hat und ein X11-/XWayland-``DISPLAY`` vorhanden ist.
+    anderes gesetzt hat, ein X11-/XWayland-``DISPLAY`` vorhanden ist und
+    die noetige ``libxcb-cursor``-Bibliothek installiert ist.
 
     Muss *vor* der Erzeugung von ``QApplication`` aufgerufen werden. Ohne
     XCB (typisch: Qt waehlt unter WSLg/Wayland-Sessions ``wayland``) ist
-    weder ``QWindow.fromWinId`` noch X11-Reparenting in ein Qt-Widget
-    moeglich — sichtbar als
-    ``QWindow::fromWinId(): platform plugin does not support foreign windows``.
+    X11-Reparenting von Surfer in ein Qt-Widget nicht moeglich. Fehlt
+    dagegen ``libxcb-cursor``, wuerde ein erzwungenes ``xcb`` den Start
+    komplett abbrechen — dann belassen wir das Platform-Plugin ungesetzt,
+    damit die GUI wenigstens unter Wayland startet (Surfer dann extern /
+    Fallback-Viewer).
     """
     if not sys.platform.startswith("linux"):
         return
     if os.environ.get("QT_QPA_PLATFORM"):
         return
-    if os.environ.get("DISPLAY"):
-        os.environ["QT_QPA_PLATFORM"] = "xcb"
+    if not os.environ.get("DISPLAY"):
+        return
+    if not is_xcb_cursor_available():
+        print(
+            "Hinweis: libxcb-cursor fehlt — Qt-xcb wird nicht erzwungen "
+            "(Surfer-Einbettung ggf. nicht verfuegbar). "
+            "Unter Ubuntu/Debian/WSL: sudo apt install libxcb-cursor0",
+            file=sys.stderr,
+        )
+        return
+    os.environ["QT_QPA_PLATFORM"] = "xcb"
 
 
 def qt_platform_name() -> str:

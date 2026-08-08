@@ -12,11 +12,20 @@ from ghdl_studio.theme import apply_dark_theme
 
 
 def main() -> int:
-    # Vor QApplication: unter Linux/WSL XCB erzwingen, damit Surfer per
-    # X11-Reparenting eingebettet werden kann (Wayland unterstuetzt keine
-    # Foreign Windows).
+    # Vor QApplication: unter Linux/WSL XCB bevorzugen (wenn libxcb-cursor
+    # vorhanden), damit Surfer per X11-Reparenting eingebettet werden kann.
     ensure_linux_xcb_platform()
-    app = QApplication(sys.argv)
+    try:
+        app = QApplication(sys.argv)
+    except Exception as exc:  # noqa: BLE001 - Qt kann hier auch hart abbrechen
+        print(f"GHDL Studio konnte nicht starten: {exc}", file=sys.stderr)
+        if sys.platform.startswith("linux"):
+            print(
+                "Tipp (Ubuntu/Debian/WSL): sudo apt install libxcb-cursor0\n"
+                "Danach erneut starten. Alternativ: export QT_QPA_PLATFORM=wayland",
+                file=sys.stderr,
+            )
+        return 1
     app.setApplicationName("GHDL Studio")
     apply_dark_theme(app)
     window = MainWindow()
