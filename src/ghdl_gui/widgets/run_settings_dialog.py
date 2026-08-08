@@ -53,9 +53,9 @@ class RunSettingsDialog(QDialog):
         self._std_combo.addItems(VHDL_STANDARDS)
         self._std_combo.setCurrentText(run_options.std)
 
-        self._top_unit_edit = QLineEdit(run_options.top_unit, self)
-        self._stop_time_edit = QLineEdit(run_options.stop_time or "", self)
-        self._stop_time_edit.setPlaceholderText("z. B. 100ns (optional)")
+        # Top-Level-Entity und Stop-Zeit werden direkt auf der Hauptseite in
+        # der Simulations-Werkzeugleiste festgelegt (klickbare Auswahl aus
+        # den erkannten VHDL-Entities) und sind daher hier nicht dupliziert.
 
         self._analyze_flags_edit = QLineEdit(" ".join(run_options.extra_analyze_args), self)
         self._analyze_flags_edit.setPlaceholderText("zusaetzliche Flags fuer ghdl -a, per Leerzeichen getrennt")
@@ -97,8 +97,6 @@ class RunSettingsDialog(QDialog):
         form.addRow("GHDL-Executable:", ghdl_path_row)
         form.addRow("", check_button)
         form.addRow("VHDL-Standard:", self._std_combo)
-        form.addRow("Top-Level-Entity:", self._top_unit_edit)
-        form.addRow("Stop-Zeit:", self._stop_time_edit)
         form.addRow("Analyze-Flags (ghdl -a):", analyze_flags_row)
         form.addRow("Elaborate-Flags (ghdl -e):", elaborate_flags_row)
         form.addRow("Run-Flags (ghdl -r):", run_flags_row)
@@ -155,8 +153,6 @@ class RunSettingsDialog(QDialog):
         self._settings.ghdl_executable = self._ghdl_path_edit.text().strip()
         self._settings.vhdl_std = self._std_combo.currentText()
         self._run_options.std = self._std_combo.currentText()
-        self._run_options.top_unit = self._top_unit_edit.text().strip()
-        self._run_options.stop_time = self._stop_time_edit.text().strip() or None
         analyze_flags = self._analyze_flags_edit.text().split()
         self._run_options.extra_analyze_args = analyze_flags
         self._settings.analyze_extra_args = analyze_flags

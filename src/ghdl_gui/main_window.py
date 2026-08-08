@@ -7,8 +7,10 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
+    QComboBox,
     QDockWidget,
-    QFileDialog,
+    QLabel,
+    QLineEdit,
     QMainWindow,
     QMessageBox,
     QTabWidget,
@@ -24,6 +26,7 @@ from ghdl_gui.ghdl_commands import (
 from ghdl_gui.ghdl_runner import GhdlRunner
 from ghdl_gui.settings import AppSettings
 from ghdl_gui.vcd_parser import parse_vcd
+from ghdl_gui.vhdl_scanner import find_vhdl_entities, is_verilog_file, is_vhdl_file
 from ghdl_gui.widgets.code_editor import CodeEditor
 from ghdl_gui.widgets.file_explorer import FileExplorer
 from ghdl_gui.widgets.log_console import LogConsole
@@ -53,6 +56,7 @@ class MainWindow(QMainWindow):
 
         self._file_explorer = FileExplorer(self)
         self._file_explorer.file_double_clicked.connect(self._open_file_in_editor)
+        self._file_explorer.files_changed.connect(self._on_project_files_changed)
 
         self._log_console = LogConsole(self)
         self._waveform_viewer = WaveformViewer(self)
@@ -76,13 +80,14 @@ class MainWindow(QMainWindow):
 
         self._create_menu()
         self._create_toolbar()
+        self._create_simulation_bar()
         self._pending_after_run: str | None = None
 
     def _create_menu(self) -> None:
         menu_bar = self.menuBar()
 
         file_menu = menu_bar.addMenu("&Datei")
-        add_action = QAction("VHDL-Datei(en) hinzufuegen...", self)
+        add_action = QAction("Quelldatei(en) hinzufuegen...", self)
         add_action.triggered.connect(self._file_explorer._on_add_files)
         file_menu.addAction(add_action)
         save_action = QAction("Speichern", self)
@@ -136,6 +141,73 @@ class MainWindow(QMainWindow):
         toolbar.addAction(self._stop_action)
         self.addToolBar(toolbar)
 
+    def _create_simulation_bar(self) -> None:
+        """Erstellt eine zweite, auf der Hauptseite sichtbare Werkzeugleiste
+        fuer die am haeufigsten benoetigten Simulationsparameter: die
+        Top-Level-Entity (klickbar auswaehlbar aus den erkannten VHDL-Entities)
+        und die Stop-Zeit der Simulation.
+        """
+        self._top_unit_combo = QComboBox(self)
+        self._top_unit_combo.setEditable(True)
+        self._top_unit_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self._top_unit_combo.setMinimumWidth(220)
+        self._top_unit_combo.setToolTip(
+            "Top-Level-Entity fuer Elaborate/Run. Klicke auf den Pfeil, um aus den "
+            "in den Projektdateien gefundenen VHDL-Entities auszuwaehlen, oder "
+            "tippe den Namen manuell ein."
+        )
+        if self._run_options.top_unit:
+            self._top_unit_combo.addItem(self._run_options.top_unit)
+        self._top_unit_combo.setCurrentText(self._run_options.top_unit)
+        self._top_unit_combo.currentTextChanged.connect(self._on_top_unit_changed)
+
+        self._stop_time_edit = QLineEdit(self._run_options.stop_time or "", self)
+        self._stop_time_edit.setPlaceholderText("z. B. 200ns (optional)")
+        self._stop_time_edit.setMaximumWidth(140)
+        self._stop_time_edit.setToolTip(
+            "Simulationsdauer fuer 'ghdl -r' (--stop-time=). Leer lassen, um bis "
+            "zum natuerlichen Ende der Simulation zu laufen."
+        )
+        self._stop_time_edit.textChanged.connect(self._on_stop_time_changed)
+
+        sim_bar = QToolBar("Simulationseinstellungen", self)
+        sim_bar.setObjectName("simulation_bar")
+        sim_bar.addWidget(QLabel(" Top-Level-Entity: ", self))
+        sim_bar.addWidget(self._top_unit_combo)
+        sim_bar.addWidget(QLabel("  Stop-Zeit: ", self))
+        sim_bar.addWidget(self._stop_time_edit)
+        self.addToolBarBreak()
+        self.addToolBar(sim_bar)
+
+        self._refresh_top_unit_candidates()
+
+    def _on_top_unit_changed(self, text: str) -> None:
+        self._run_options.top_unit = text.strip()
+
+    def _on_stop_time_changed(self, text: str) -> None:
+        self._run_options.stop_time = text.strip() or None
+
+    def _on_project_files_changed(self, _files: list[str]) -> None:
+        self._refresh_top_unit_candidates()
+
+    def _refresh_top_unit_candidates(self) -> None:
+        """Durchsucht die Projektdateien erneut nach VHDL-Entities und
+        aktualisiert die klickbare Auswahlliste, ohne eine bereits vom
+        Nutzer getroffene Auswahl/Eingabe zu verwerfen."""
+        current_text = self._top_unit_combo.currentText().strip()
+        entities = find_vhdl_entities(self._file_explorer.files())
+
+        self._top_unit_combo.blockSignals(True)
+        self._top_unit_combo.clear()
+        self._top_unit_combo.addItems(entities)
+        if current_text:
+            index = self._top_unit_combo.findText(current_text)
+            if index >= 0:
+                self._top_unit_combo.setCurrentIndex(index)
+            else:
+                self._top_unit_combo.setEditText(current_text)
+        self._top_unit_combo.blockSignals(False)
+
     def _open_settings_dialog(self) -> None:
         dialog = RunSettingsDialog(self._settings, self._run_options, self)
         if dialog.exec():
@@ -173,6 +245,7 @@ class MainWindow(QMainWindow):
         editor = self._editor_tabs.currentWidget()
         if isinstance(editor, CodeEditor):
             editor.save()
+            self._refresh_top_unit_candidates()
 
     def _close_editor_tab(self, index: int) -> None:
         editor = self._editor_tabs.widget(index)
@@ -202,11 +275,21 @@ class MainWindow(QMainWindow):
         executable = self._ghdl_executable_or_warn()
         if not executable:
             return
-        files = self._file_explorer.files()
-        if not files:
-            QMessageBox.warning(self, "Keine Dateien", "Bitte zuerst VHDL-Dateien hinzufuegen.")
+        all_files = self._file_explorer.files()
+        vhdl_files = [f for f in all_files if is_vhdl_file(f)]
+        verilog_files = [f for f in all_files if is_verilog_file(f)]
+        if not vhdl_files:
+            QMessageBox.warning(self, "Keine VHDL-Dateien", "Bitte zuerst VHDL-Dateien hinzufuegen.")
             return
-        args = build_analyze_args(files, std=self._run_options.std, extra_args=self._run_options.extra_analyze_args)
+        if verilog_files:
+            names = ", ".join(Path(f).name for f in verilog_files)
+            self._log_console.append_output(
+                "Hinweis: GHDL kann Verilog-Dateien nicht direkt analysieren/simulieren. "
+                f"Folgende Datei(en) werden bei 'Analyze' uebersprungen: {names}"
+            )
+        args = build_analyze_args(
+            vhdl_files, std=self._run_options.std, extra_args=self._run_options.extra_analyze_args
+        )
         self._runner.run(executable, args, cwd=None, label="Analyze")
 
     def _run_elaborate(self) -> None:
@@ -214,7 +297,9 @@ class MainWindow(QMainWindow):
         if not executable:
             return
         if not self._run_options.top_unit:
-            QMessageBox.warning(self, "Keine Top-Entity", "Bitte in den Einstellungen eine Top-Level-Entity angeben.")
+            QMessageBox.warning(
+                self, "Keine Top-Entity", "Bitte oben in der Werkzeugleiste eine Top-Level-Entity auswaehlen."
+            )
             return
         args = build_elaborate_args(
             self._run_options.top_unit, std=self._run_options.std, extra_args=self._run_options.extra_elaborate_args
@@ -226,7 +311,9 @@ class MainWindow(QMainWindow):
         if not executable:
             return
         if not self._run_options.top_unit:
-            QMessageBox.warning(self, "Keine Top-Entity", "Bitte in den Einstellungen eine Top-Level-Entity angeben.")
+            QMessageBox.warning(
+                self, "Keine Top-Entity", "Bitte oben in der Werkzeugleiste eine Top-Level-Entity auswaehlen."
+            )
             return
         vcd_path = self._run_options.vcd_path()
         args = build_run_args(
