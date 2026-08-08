@@ -21,6 +21,13 @@ läuft GHDL Studio unverändert unter Linux, Windows und macOS.
   - **Elaborate** (`ghdl -e`)
   - **Run** (`ghdl -r`), inklusive VCD-Export, Stop-Zeit und Generics
   - Kombinierter Ablauf "Analyze + Elaborate + Run"
+- **Eigenes Ausgabeverzeichnis** (standardmäßig `output/`, konfigurierbar in den Einstellungen):
+  Analyze/Elaborate/Run laufen mit diesem Verzeichnis als Arbeitsverzeichnis, sodass Work-
+  Bibliothek (`work-obj*.cf`), Objektdateien (`*.o`), VCD-Dumps (`*.vcd`), Coverage-Daten
+  (`*.gcda`/`*.gcno`) und die elaborierte Simulations-Executable dort landen statt das
+  Projekt-Wurzelverzeichnis zuzumüllen. Über "Simulation" → **"Bereinigen (Clean)"** (auch als
+  Toolbar-Button) lässt sich der Inhalt des Ausgabeverzeichnisses jederzeit wieder entfernen —
+  analog zu einem `clean`-Ziel in einem GHDL-Makefile
 - Live-Log-Konsole mit Farbkodierung (Befehl / Ausgabe / Fehler / Erfolg)
 - **Vollständig eingebettetes GTKWave** im Tab "Wellenformen": Ist [GTKWave](https://gtkwave.sourceforge.net/)
   installiert, wird es nach jedem Simulationslauf automatisch gestartet und dessen komplettes
