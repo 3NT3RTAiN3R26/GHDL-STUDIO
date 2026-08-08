@@ -27,6 +27,7 @@ from ghdl_studio.ghdl_commands import (
     build_analyze_args,
     build_elaborate_args,
     build_run_args,
+    clean_output_dir,
 )
 from ghdl_studio.ghdl_runner import GhdlRunner
 from ghdl_studio.gtkwave_embed import GtkWaveEmbedder
@@ -52,6 +53,7 @@ class MainWindow(QMainWindow):
         self._settings = AppSettings()
         self._run_options = RunOptions(
             std=self._settings.vhdl_std,
+            output_dir=self._settings.output_dir,
             extra_analyze_args=self._settings.analyze_extra_args,
             extra_elaborate_args=self._settings.elaborate_extra_args,
             extra_run_args=self._settings.run_extra_args,
@@ -166,6 +168,15 @@ class MainWindow(QMainWindow):
         self._stop_action.triggered.connect(self._runner.stop)
         run_menu.addAction(self._stop_action)
 
+        run_menu.addSeparator()
+        self._clean_action = QAction("Bereinigen (Clean)", self)
+        self._clean_action.setToolTip(
+            "Entfernt alle generierten Dateien aus dem Ausgabeverzeichnis "
+            "(Work-Bibliothek, *.o, *.vcd, *.gcda/*.gcno, Simulations-Executable)."
+        )
+        self._clean_action.triggered.connect(self._on_clean_clicked)
+        run_menu.addAction(self._clean_action)
+
         settings_menu = menu_bar.addMenu("&Einstellungen")
         preferences_action = QAction("Einstellungen...", self)
         preferences_action.triggered.connect(self._open_settings_dialog)
@@ -184,6 +195,7 @@ class MainWindow(QMainWindow):
         toolbar.addAction(self._all_action)
         toolbar.addSeparator()
         toolbar.addAction(self._stop_action)
+        toolbar.addAction(self._clean_action)
         self.addToolBar(toolbar)
 
     def _create_simulation_bar(self) -> None:
@@ -318,6 +330,16 @@ class MainWindow(QMainWindow):
             return None
         return executable
 
+    def _ensure_output_dir(self) -> str:
+        """Stellt sicher, dass das Ausgabeverzeichnis existiert, und gibt es
+        zurueck. Alle GHDL-Aufrufe laufen mit diesem Verzeichnis als
+        Arbeitsverzeichnis, damit Work-Bibliothek, Objektdateien,
+        VCD-Dumps, Coverage-Daten und die elaborierte Simulations-
+        Executable dort landen statt im Projekt-Wurzelverzeichnis."""
+        output_dir = self._run_options.output_dir
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+        return output_dir
+
     def _run_analyze(self) -> None:
         executable = self._ghdl_executable_or_warn()
         if not executable:
@@ -334,10 +356,11 @@ class MainWindow(QMainWindow):
                 "Hinweis: GHDL kann Verilog-Dateien nicht direkt analysieren/simulieren. "
                 f"Folgende Datei(en) werden bei 'Analyze' uebersprungen: {names}"
             )
+        output_dir = self._ensure_output_dir()
         args = build_analyze_args(
             vhdl_files, std=self._run_options.std, extra_args=self._run_options.extra_analyze_args
         )
-        self._runner.run(executable, args, cwd=None, label="Analyze")
+        self._runner.run(executable, args, cwd=output_dir, label="Analyze")
 
     def _run_elaborate(self) -> None:
         executable = self._ghdl_executable_or_warn()
@@ -348,10 +371,11 @@ class MainWindow(QMainWindow):
                 self, "Keine Top-Entity", "Bitte oben in der Werkzeugleiste eine Top-Level-Entity auswaehlen."
             )
             return
+        output_dir = self._ensure_output_dir()
         args = build_elaborate_args(
             self._run_options.top_unit, std=self._run_options.std, extra_args=self._run_options.extra_elaborate_args
         )
-        self._runner.run(executable, args, cwd=None, label="Elaborate")
+        self._runner.run(executable, args, cwd=output_dir, label="Elaborate")
 
     def _run_simulation(self) -> None:
         executable = self._ghdl_executable_or_warn()
@@ -362,20 +386,57 @@ class MainWindow(QMainWindow):
                 self, "Keine Top-Entity", "Bitte oben in der Werkzeugleiste eine Top-Level-Entity auswaehlen."
             )
             return
-        vcd_path = self._run_options.vcd_path()
+        output_dir = self._ensure_output_dir()
+        # GHDL laeuft mit output_dir als Arbeitsverzeichnis, daher genuegt
+        # als --vcd=-Argument der bare Dateiname (sonst wuerde das
+        # Ausgabeverzeichnis doppelt im Pfad auftauchen).
         args = build_run_args(
             self._run_options.top_unit,
             std=self._run_options.std,
-            vcd_path=vcd_path,
+            vcd_path=self._run_options.vcd_filename(),
             stop_time=self._run_options.stop_time,
             generics=self._run_options.generics,
             extra_args=self._run_options.extra_run_args,
         )
-        self._pending_after_run = vcd_path
-        self._runner.run(executable, args, cwd=None, label="Run")
+        self._pending_after_run = self._run_options.vcd_path()
+        self._runner.run(executable, args, cwd=output_dir, label="Run")
 
     def _run_full_flow(self) -> None:
         self._run_analyze()
+
+    def _on_clean_clicked(self) -> None:
+        """Entspricht einem 'make clean': entfernt alle im Ausgabeverzeichnis
+        generierten Dateien (Work-Bibliothek, *.o, *.vcd, *.gcda/*.gcno,
+        Simulations-Executable), ohne das Verzeichnis selbst zu loeschen."""
+        if self._runner.is_running:
+            QMessageBox.warning(
+                self,
+                "Simulation laeuft",
+                "Bitte zuerst die laufende Simulation stoppen, bevor bereinigt wird.",
+            )
+            return
+
+        output_dir = self._run_options.output_dir
+        removed = clean_output_dir(output_dir)
+
+        # Der GTKWave-Prozess bzw. die interne Wellenformanzeige zeigen
+        # ggf. eine soeben geloeschte VCD-Datei an - beides zuruecksetzen.
+        self._gtkwave_embedder.stop()
+        self._clear_gtkwave_container()
+        self._gtkwave_retry_button.setVisible(False)
+        self._waveform_stack.setCurrentIndex(_WAVEFORM_PAGE_INTERNAL)
+        self._current_vcd_path = None
+
+        if removed:
+            self._log_console.append_success(
+                f"Bereinigt: {len(removed)} Eintrag/Eintraege aus '{output_dir}' entfernt "
+                f"({', '.join(removed)})."
+            )
+            self._waveform_status_label.setText("Ausgabeverzeichnis bereinigt. Noch keine Simulation ausgefuehrt.")
+        else:
+            self._log_console.append_output(
+                f"Bereinigen: Ausgabeverzeichnis '{output_dir}' existiert nicht oder ist bereits leer."
+            )
 
     def _on_command_started(self, command_text: str) -> None:
         self._log_console.append_command(f"$ {command_text}")
