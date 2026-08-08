@@ -78,7 +78,8 @@ src/ghdl_studio/
     ├── waveform_viewer.py         # Fallback waveform view from VCD data, including time ruler
     └── run_settings_dialog.py     # Settings dialog (GHDL/Surfer path, standard, flags)
 
-examples/counter/            # Example: simple counter + testbench
+examples/counter/            # Example: simple counter + basic testbench
+examples/adder/              # Example: combinational adder + OSVVM testbench
 tests/                        # Unit tests for the Qt-independent modules
 ```
 
@@ -193,21 +194,33 @@ or, thanks to the editable install:
 ghdl-studio
 ```
 
-## Try the example project
+## Try the example projects
+
+### Counter (built-in testbench)
 
 1. Start the GUI
 2. Via "Project files" → "Add file..." add the files from `examples/counter/`
-   (`counter.vhd`, `counter_tb.vhd`)
+   (`counter.vhd`, then `counter_tb.vhd` — order is the compile order)
 3. In the toolbar click the "Top-level entity" drop-down arrow and
-   select `counter_tb` (detected automatically from the project files);
-   optionally enter a stop time such as `200ns` in the same area
+   select `counter_tb`; optionally enter a stop time such as `200ns`
 4. If needed, check the GHDL and Surfer paths in Settings (button
    "Detect automatically")
 5. Menu "Simulation" → "Analyze + Elaborate + Run"
-6. After a successful run the view switches automatically to the "Waveforms" tab: if
-   Surfer is available it is embedded automatically (may take a few seconds; the
-   status is shown above the waveforms); otherwise the built-in fallback viewer
-   appears immediately with a time ruler and the simulated signal traces
+6. After a successful run the view switches to the "Waveforms" tab (Surfer if
+   available, otherwise the built-in fallback viewer)
+
+### Adder (OSVVM testbench)
+
+1. Precompile OSVVM for GHDL (vendor script or OSVVM TCL) and set
+   **Settings → OSVVM lib path** to the directory that contains the compiled
+   OSVVM libraries (`-P` search path)
+2. Add `examples/adder/adder.vhd`, then `examples/adder/adder_tb.vhd`
+3. Select top-level entity `adder_tb` (stop time can stay empty — the TB calls
+   `std.env.stop`)
+4. Analyze → Elaborate → Run
+5. The Output dock shows OSVVM transcript lines (`%% … Log … PASSED …`);
+   GHDL Studio also creates `OsvvmTemp_GHDL/OsvvmRun.yml` in the project
+   directory before Run if it is missing
 
 ## Development & tests
 
