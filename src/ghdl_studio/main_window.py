@@ -28,7 +28,9 @@ from ghdl_studio.ghdl_commands import (
     build_analyze_args,
     build_elaborate_args,
     build_run_args,
+    build_simulation_option_args,
     clean_output_dir,
+    elaborated_executable_path,
 )
 from ghdl_studio.ghdl_runner import GhdlRunner
 from ghdl_studio.surfer_embed import SurferEmbedder
@@ -461,6 +463,23 @@ class MainWindow(QMainWindow):
         output_dir = self._ensure_output_dir()
         vcd_abs = str(Path(output_dir) / self._run_options.vcd_filename())
         ghw_abs = str(Path(output_dir) / self._run_options.ghw_filename())
+        sim_opts = build_simulation_option_args(
+            vcd_path=vcd_abs,
+            wave_path=ghw_abs,
+            stop_time=self._run_options.stop_time,
+            generics=self._run_options.generics,
+        )
+        self._pending_after_run = vcd_abs
+
+        # Elaborate uses ``-o <output>/<unit>``. GCC/LLVM backends then need that
+        # binary started directly — ``ghdl -r <unit>`` only looks in the process cwd.
+        # Do not forward GHDL-only flags (e.g. -fsynopsys) to the sim binary.
+        elaborated = elaborated_executable_path(output_dir, self._run_options.top_unit)
+        if elaborated is not None:
+            self._runner.run(elaborated, sim_opts, cwd=project_cwd, label="Run")
+            return
+
+        # mcode (or missing elaborate): fall back to ``ghdl -r`` + --workdir
         args = build_run_args(
             self._run_options.top_unit,
             std=self._run_options.std,
@@ -472,7 +491,6 @@ class MainWindow(QMainWindow):
             extra_args=self._run_options.extra_run_args,
             library_paths=self._run_options.library_paths(),
         )
-        self._pending_after_run = vcd_abs
         self._runner.run(executable, args, cwd=project_cwd, label="Run")
 
     def _on_clean_clicked(self) -> None:

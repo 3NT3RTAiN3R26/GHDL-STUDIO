@@ -8,7 +8,9 @@ from ghdl_studio.ghdl_commands import (
     build_elaborate_args,
     build_library_search_args,
     build_run_args,
+    build_simulation_option_args,
     clean_output_dir,
+    elaborated_executable_path,
     parse_ghdl_version,
 )
 
@@ -59,6 +61,29 @@ def test_build_elaborate_and_run_args_with_library_paths():
 def test_run_options_library_paths():
     options = RunOptions(osvvm_lib_path="/osvvm", custom_lib_path="/custom")
     assert options.library_paths() == ["/osvvm", "/custom"]
+
+
+def test_elaborated_executable_path_finds_binary(tmp_path):
+    binary = tmp_path / "variabledelaytb"
+    binary.write_text("#!/bin/sh\n")
+    binary.chmod(0o755)
+    assert elaborated_executable_path(str(tmp_path), "variabledelaytb") == str(binary.resolve())
+    assert elaborated_executable_path(str(tmp_path), "missing") is None
+
+
+def test_build_simulation_option_args():
+    args = build_simulation_option_args(
+        vcd_path="/tmp/a.vcd",
+        wave_path="/tmp/a.ghw",
+        stop_time="200ns",
+        generics={"WIDTH": "8"},
+    )
+    assert args == [
+        "-gWIDTH=8",
+        "--vcd=/tmp/a.vcd",
+        "--wave=/tmp/a.ghw",
+        "--stop-time=200ns",
+    ]
 
 
 def test_build_analyze_args_requires_files():

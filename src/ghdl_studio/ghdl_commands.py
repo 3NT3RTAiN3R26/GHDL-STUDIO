@@ -141,6 +141,40 @@ def build_elaborate_args(
     return args
 
 
+def elaborated_executable_path(output_dir: str, unit: str) -> str | None:
+    """Return the path of a ``ghdl -e -o`` binary in ``output_dir``, if present.
+
+    GCC/LLVM backends create a real executable; on Windows the ``.exe`` suffix
+    is also accepted. Returns ``None`` when no such file exists (e.g. mcode).
+    """
+    if not unit:
+        return None
+    base = Path(output_dir) / unit
+    for candidate in (base, base.with_suffix(".exe")):
+        if candidate.is_file():
+            return str(candidate.resolve())
+    return None
+
+
+def build_simulation_option_args(
+    vcd_path: str | None = None,
+    wave_path: str | None = None,
+    stop_time: str | None = None,
+    generics: dict[str, str] | None = None,
+) -> list[str]:
+    """Build simulation options placed after the unit name / elaborated binary."""
+    args: list[str] = []
+    for key, value in (generics or {}).items():
+        args.append(f"-g{key}={value}")
+    if vcd_path:
+        args.append(f"--vcd={vcd_path}")
+    if wave_path:
+        args.append(f"--wave={wave_path}")
+    if stop_time:
+        args.append(f"--stop-time={stop_time}")
+    return args
+
+
 def build_run_args(
     unit: str,
     std: str = DEFAULT_STD,
@@ -169,14 +203,14 @@ def build_run_args(
     args.extend(build_library_search_args(*(library_paths or [])))
     args.extend(extra_args or [])
     args.append(unit)
-    for key, value in (generics or {}).items():
-        args.append(f"-g{key}={value}")
-    if vcd_path:
-        args.append(f"--vcd={vcd_path}")
-    if wave_path:
-        args.append(f"--wave={wave_path}")
-    if stop_time:
-        args.append(f"--stop-time={stop_time}")
+    args.extend(
+        build_simulation_option_args(
+            vcd_path=vcd_path,
+            wave_path=wave_path,
+            stop_time=stop_time,
+            generics=generics,
+        )
+    )
     return args
 
 
