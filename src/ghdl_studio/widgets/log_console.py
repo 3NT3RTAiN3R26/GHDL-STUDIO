@@ -1,9 +1,15 @@
-"""Read-only Konsole zur Anzeige der GHDL-Ausgaben."""
+"""Read-only console for GHDL / OSVVM process output."""
 
 from __future__ import annotations
 
 from PySide6.QtGui import QColor, QTextCharFormat, QTextCursor
 from PySide6.QtWidgets import QPlainTextEdit, QWidget
+
+
+def is_osvvm_transcript_line(line: str) -> bool:
+    """Return True for OSVVM AlertLog / Transcript lines (often on stderr)."""
+    stripped = line.lstrip()
+    return stripped.startswith("%%") or "    Log    " in line
 
 
 class LogConsole(QPlainTextEdit):

@@ -24,14 +24,18 @@ On **every operating system** the interface uses a consistent dark theme
   - **Analyze** (`ghdl -a`)
   - **Elaborate** (`ghdl -e`)
   - **Run** (`ghdl -r`), including VCD and GHW export (`--vcd=` / `--wave=`), stop time and generics
-  - Combined flow "Analyze + Elaborate + Run"
+  - Combined flow "Analyze + Elaborate + Run" (individual Analyze / Elaborate / Run
+  buttons do **not** chain into the next step)
 - **Dedicated output directory** (default `output/`, configurable in Settings):
-  Analyze/Elaborate/Run run with this directory as the working directory, so the work
-  library (`work-obj*.cf`), object files (`*.o`), waveform dumps (`*.vcd`/`*.ghw`), coverage data
-  (`*.gcda`/`*.gcno`) and the elaborated simulation executable land there instead of
-  cluttering the project root. Via Simulation → **"Clean"** (also a
+  passed to GHDL as `--workdir` so the work library (`work-obj*.cf`), object files
+  (`*.o`), waveform dumps (`*.vcd`/`*.ghw`), coverage data (`*.gcda`/`*.gcno`) and the
+  elaborated simulation executable land there. The process **cwd** remains the project
+  directory (common parent of the VHDL sources) so frameworks such as OSVVM can open
+  relative paths like `OsvvmTemp_GHDL/…`. Via Simulation → **"Clean"** (also a
   toolbar button) you can clear the output directory at any time —
   similar to a `clean` target in a GHDL Makefile
+- Live log console shows GHDL output and **OSVVM transcript** lines (`%% … Log …`),
+  including text that GHDL writes on stderr
 - Live log console with colour coding (command / output / error / success)
 - **Fully embedded [Surfer](https://surfer-project.org/)** in the "Waveforms" tab:
   If Surfer is installed, it is started automatically after each simulation run and its

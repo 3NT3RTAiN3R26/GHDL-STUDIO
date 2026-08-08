@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from PySide6.QtCore import Qt
@@ -36,7 +37,7 @@ from ghdl_studio.vcd_parser import parse_vcd
 from ghdl_studio.vhdl_scanner import find_vhdl_entities, is_verilog_file, is_vhdl_file
 from ghdl_studio.widgets.code_editor import CodeEditor
 from ghdl_studio.widgets.file_explorer import FileExplorer
-from ghdl_studio.widgets.log_console import LogConsole
+from ghdl_studio.widgets.log_console import LogConsole, is_osvvm_transcript_line
 from ghdl_studio.widgets.run_settings_dialog import RunSettingsDialog
 from ghdl_studio.widgets.waveform_viewer import WaveformViewer
 
@@ -132,6 +133,9 @@ class MainWindow(QMainWindow):
         self._create_toolbar()
         self._create_simulation_bar()
         self._pending_after_run: str | None = None
+        # Only "Analyze + Elaborate + Run" fills this; individual toolbar
+        # actions must not auto-chain into the next GHDL step.
+        self._pending_chain: list[str] = []
         self._current_vcd_path: str | None = None
 
     def _create_menu(self) -> None:
@@ -333,24 +337,67 @@ class MainWindow(QMainWindow):
             return None
         return executable
 
+    def _project_working_directory(self) -> str:
+        """Directory used as the GHDL process cwd (project root).
+
+        OSVVM and similar frameworks open relative paths such as
+        ``OsvvmTemp_GHDL/OsvvmRun.yml`` against this directory. Build
+        artefacts still go to the configured output directory via
+        ``--workdir``.
+        """
+        vhdl_files = [f for f in self._file_explorer.files() if is_vhdl_file(f)]
+        if vhdl_files:
+            parents = [str(Path(f).resolve().parent) for f in vhdl_files]
+            try:
+                return str(Path(os.path.commonpath(parents)))
+            except ValueError:
+                return str(Path(vhdl_files[0]).resolve().parent)
+        stored = self._settings.last_project_dir
+        if stored:
+            return stored
+        return str(Path.cwd())
+
     def _ensure_output_dir(self) -> str:
-        """Stellt sicher, dass das Ausgabeverzeichnis existiert, und gibt es
-        zurueck. Alle GHDL-Aufrufe laufen mit diesem Verzeichnis als
-        Arbeitsverzeichnis, damit Work-Bibliothek, Objektdateien,
-        VCD-Dumps, Coverage-Daten und die elaborierte Simulations-
-        Executable dort landen statt im Projekt-Wurzelverzeichnis."""
-        output_dir = self._run_options.output_dir
-        Path(output_dir).mkdir(parents=True, exist_ok=True)
-        return output_dir
+        """Ensure the output directory exists and return it as an absolute path.
+
+        Relative output dirs are resolved against the project working directory.
+        """
+        output = Path(self._run_options.output_dir)
+        if not output.is_absolute():
+            output = Path(self._project_working_directory()) / output
+        output.mkdir(parents=True, exist_ok=True)
+        return str(output.resolve())
 
     def _run_analyze(self) -> None:
+        """Toolbar/menu Analyze: analyse only (no automatic Elaborate/Run)."""
+        self._pending_chain = []
+        self._start_analyze()
+
+    def _run_elaborate(self) -> None:
+        """Toolbar/menu Elaborate: elaborate only (no automatic Run)."""
+        self._pending_chain = []
+        self._start_elaborate()
+
+    def _run_simulation(self) -> None:
+        """Toolbar/menu Run: simulate only."""
+        self._pending_chain = []
+        self._start_run()
+
+    def _run_full_flow(self) -> None:
+        """Analyze, then Elaborate, then Run — in that order."""
+        self._pending_chain = ["Elaborate", "Run"]
+        self._start_analyze()
+
+    def _start_analyze(self) -> None:
         executable = self._ghdl_executable_or_warn()
         if not executable:
+            self._pending_chain = []
             return
         all_files = self._file_explorer.files()
         vhdl_files = [f for f in all_files if is_vhdl_file(f)]
         verilog_files = [f for f in all_files if is_verilog_file(f)]
         if not vhdl_files:
+            self._pending_chain = []
             QMessageBox.warning(self, "No VHDL files", "Please add VHDL files first.")
             return
         if verilog_files:
@@ -359,61 +406,74 @@ class MainWindow(QMainWindow):
                 "Note: GHDL cannot analyse/simulate Verilog files directly. "
                 f"The following file(s) will be skipped during 'Analyze': {names}"
             )
+        project_cwd = self._project_working_directory()
         output_dir = self._ensure_output_dir()
         args = build_analyze_args(
             vhdl_files,
             std=self._run_options.std,
+            work_dir=output_dir,
             extra_args=self._run_options.extra_analyze_args,
             library_paths=self._run_options.library_paths(),
         )
-        self._runner.run(executable, args, cwd=output_dir, label="Analyze")
+        self._runner.run(executable, args, cwd=project_cwd, label="Analyze")
 
-    def _run_elaborate(self) -> None:
+    def _start_elaborate(self) -> None:
         executable = self._ghdl_executable_or_warn()
         if not executable:
+            self._pending_chain = []
             return
         if not self._run_options.top_unit:
+            self._pending_chain = []
             QMessageBox.warning(
                 self, "No top entity", "Please select a top-level entity in the toolbar above."
             )
             return
+        project_cwd = self._project_working_directory()
         output_dir = self._ensure_output_dir()
+        # Keep the elaborated executable inside the output directory even though
+        # the process cwd is the project root (needed for OSVVM relative paths).
+        elaborate_extra = [
+            *self._run_options.extra_elaborate_args,
+            "-o",
+            str(Path(output_dir) / self._run_options.top_unit),
+        ]
         args = build_elaborate_args(
             self._run_options.top_unit,
             std=self._run_options.std,
-            extra_args=self._run_options.extra_elaborate_args,
+            work_dir=output_dir,
+            extra_args=elaborate_extra,
             library_paths=self._run_options.library_paths(),
         )
-        self._runner.run(executable, args, cwd=output_dir, label="Elaborate")
+        self._runner.run(executable, args, cwd=project_cwd, label="Elaborate")
 
-    def _run_simulation(self) -> None:
+    def _start_run(self) -> None:
         executable = self._ghdl_executable_or_warn()
         if not executable:
+            self._pending_chain = []
             return
         if not self._run_options.top_unit:
+            self._pending_chain = []
             QMessageBox.warning(
                 self, "No top entity", "Please select a top-level entity in the toolbar above."
             )
             return
+        project_cwd = self._project_working_directory()
         output_dir = self._ensure_output_dir()
-        # GHDL laeuft mit output_dir als Arbeitsverzeichnis, daher genuegen
-        # als --vcd=/--wave=-Argumente die baren Dateinamen (sonst wuerde das
-        # Ausgabeverzeichnis doppelt im Pfad auftauchen).
+        vcd_abs = str(Path(output_dir) / self._run_options.vcd_filename())
+        ghw_abs = str(Path(output_dir) / self._run_options.ghw_filename())
         args = build_run_args(
             self._run_options.top_unit,
             std=self._run_options.std,
-            vcd_path=self._run_options.vcd_filename(),
-            wave_path=self._run_options.ghw_filename(),
+            work_dir=output_dir,
+            vcd_path=vcd_abs,
+            wave_path=ghw_abs,
             stop_time=self._run_options.stop_time,
             generics=self._run_options.generics,
             extra_args=self._run_options.extra_run_args,
             library_paths=self._run_options.library_paths(),
         )
-        self._pending_after_run = self._run_options.vcd_path()
-        self._runner.run(executable, args, cwd=output_dir, label="Run")
-
-    def _run_full_flow(self) -> None:
-        self._run_analyze()
+        self._pending_after_run = vcd_abs
+        self._runner.run(executable, args, cwd=project_cwd, label="Run")
 
     def _on_clean_clicked(self) -> None:
         """Entspricht einem 'make clean': entfernt alle im Ausgabeverzeichnis
@@ -427,7 +487,7 @@ class MainWindow(QMainWindow):
             )
             return
 
-        output_dir = self._run_options.output_dir
+        output_dir = self._ensure_output_dir()
         removed = clean_output_dir(output_dir)
 
         # Der Surfer-Prozess bzw. die interne Wellenformanzeige zeigen
@@ -453,25 +513,56 @@ class MainWindow(QMainWindow):
         self._log_console.append_command(f"$ {command_text}")
 
     def _on_output(self, text: str) -> None:
-        self._log_console.append_output(text)
+        self._append_process_text(text, from_stderr=False)
 
     def _on_error(self, text: str) -> None:
-        self._log_console.append_error(text)
+        self._append_process_text(text, from_stderr=True)
+
+    def _append_process_text(self, text: str, *, from_stderr: bool) -> None:
+        """Show GHDL/OSVVM process text in the Output dock.
+
+        OSVVM transcript lines (``%% ... Log ...``) often arrive on stderr but
+        are normal log output, not tool failures — keep them as plain output.
+        Real GHDL errors (``:error:``, ``simulation failed``) stay red.
+        """
+        if not text:
+            return
+        # Preserve chunking but classify per line when mixed.
+        parts = text.splitlines(keepends=True)
+        if not parts:
+            self._log_console.append_output(text)
+            return
+        for part in parts:
+            line = part.rstrip("\r\n")
+            if is_osvvm_transcript_line(line):
+                self._log_console.append_output(part if part.endswith("\n") else part + "\n")
+            elif from_stderr and line.strip():
+                self._log_console.append_error(part if part.endswith("\n") else part + "\n")
+            elif line.strip() or part.endswith("\n"):
+                self._log_console.append_output(part if part.endswith("\n") else part + "\n")
 
     def _on_finished(self, exit_code: int, label: str) -> None:
         if exit_code == 0:
             self._log_console.append_success(f"[{label}] finished successfully (exit code 0).")
-            if label == "Analyze":
-                self._run_elaborate()
-            elif label == "Elaborate":
-                self._run_simulation()
-            elif label == "Run" and self._pending_after_run:
+            if label == "Run" and self._pending_after_run:
                 self._try_load_waveform(self._pending_after_run)
                 self._pending_after_run = None
+            if self._pending_chain:
+                next_step = self._pending_chain.pop(0)
+                if next_step == "Elaborate":
+                    self._start_elaborate()
+                elif next_step == "Run":
+                    self._start_run()
+                else:
+                    self._pending_chain = []
         else:
+            self._pending_chain = []
+            self._pending_after_run = None
             self._log_console.append_error(f"[{label}] finished with error code {exit_code}.")
 
     def _on_failed_to_start(self, error: str) -> None:
+        self._pending_chain = []
+        self._pending_after_run = None
         self._log_console.append_error(f"GHDL could not be started: {error}")
 
     def _try_load_waveform(self, vcd_path: str) -> None:
