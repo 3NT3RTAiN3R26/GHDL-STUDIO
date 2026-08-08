@@ -36,16 +36,22 @@ begin
     -- Test process (OSVVM AlertLog / AffirmIfEqual)
     ------------------------------------------------------------
     TestProc : process
-        variable RV       : RandomPType;
-        variable expected : std_logic_vector(WIDTH downto 0);
+        variable RV              : RandomPType;
+        variable expected_bits   : std_logic_vector(WIDTH downto 0);
+        variable expected_signed : integer;
+        variable received_signed : integer;
 
         procedure check_sum(constant a_val : in natural; constant b_val : in natural) is
         begin
             a <= std_logic_vector(to_unsigned(a_val, WIDTH));
             b <= std_logic_vector(to_unsigned(b_val, WIDTH));
             wait for 1 ns;
-            expected := std_logic_vector(to_unsigned(a_val + b_val, WIDTH + 1));
-            AffirmIfEqual(sum, expected,
+            -- Compare as signed integers so OSVVM logs Received as signed decimal
+            -- (std_logic_vector AffirmIfEqual would print hex).
+            expected_bits   := std_logic_vector(to_unsigned(a_val + b_val, WIDTH + 1));
+            expected_signed := to_integer(signed(expected_bits));
+            received_signed := to_integer(signed(sum));
+            AffirmIfEqual(received_signed, expected_signed,
                 "adder check: " & to_string(a_val) & " + " & to_string(b_val));
         end procedure check_sum;
     begin
