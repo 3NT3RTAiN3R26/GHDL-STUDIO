@@ -16,6 +16,7 @@ from ghdl_gui.ghdl_commands import (
     DEFAULT_STD,
     find_ghdl_executable,
 )
+from ghdl_gui.gtkwave_embed import find_gtkwave_executable
 
 ORG_NAME = "GhdlGui"
 APP_NAME = "GhdlGui"
@@ -76,6 +77,25 @@ class AppSettings:
     @run_extra_args.setter
     def run_extra_args(self, value: list[str]) -> None:
         self._settings.setValue("run_extra_args", " ".join(value))
+
+    @property
+    def gtkwave_executable(self) -> str:
+        stored = self._settings.value("gtkwave_executable", "", str)
+        if stored:
+            return stored
+        return find_gtkwave_executable() or ""
+
+    @gtkwave_executable.setter
+    def gtkwave_executable(self, value: str) -> None:
+        self._settings.setValue("gtkwave_executable", value)
+
+    @property
+    def gtkwave_integration_enabled(self) -> bool:
+        return self._settings.value("gtkwave_integration_enabled", True, bool)
+
+    @gtkwave_integration_enabled.setter
+    def gtkwave_integration_enabled(self, value: bool) -> None:
+        self._settings.setValue("gtkwave_integration_enabled", value)
 
     @property
     def last_project_dir(self) -> str:

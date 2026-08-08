@@ -13,8 +13,11 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMainWindow,
     QMessageBox,
+    QStackedWidget,
     QTabWidget,
     QToolBar,
+    QVBoxLayout,
+    QWidget,
 )
 
 from ghdl_gui.ghdl_commands import (
@@ -24,6 +27,7 @@ from ghdl_gui.ghdl_commands import (
     build_run_args,
 )
 from ghdl_gui.ghdl_runner import GhdlRunner
+from ghdl_gui.gtkwave_embed import GtkWaveEmbedder
 from ghdl_gui.settings import AppSettings
 from ghdl_gui.vcd_parser import parse_vcd
 from ghdl_gui.vhdl_scanner import find_vhdl_entities, is_verilog_file, is_vhdl_file
@@ -32,6 +36,9 @@ from ghdl_gui.widgets.file_explorer import FileExplorer
 from ghdl_gui.widgets.log_console import LogConsole
 from ghdl_gui.widgets.run_settings_dialog import RunSettingsDialog
 from ghdl_gui.widgets.waveform_viewer import WaveformViewer
+
+_WAVEFORM_PAGE_GTKWAVE = 0
+_WAVEFORM_PAGE_INTERNAL = 1
 
 
 class MainWindow(QMainWindow):
@@ -61,13 +68,36 @@ class MainWindow(QMainWindow):
         self._log_console = LogConsole(self)
         self._waveform_viewer = WaveformViewer(self)
 
+        self._gtkwave_embedder = GtkWaveEmbedder(self)
+        self._gtkwave_embedder.embedded.connect(self._on_gtkwave_embedded)
+        self._gtkwave_embedder.failed.connect(self._on_gtkwave_failed)
+        self._gtkwave_page = QWidget(self)
+        self._gtkwave_page_layout = QVBoxLayout(self._gtkwave_page)
+        self._gtkwave_page_layout.setContentsMargins(0, 0, 0, 0)
+        self._gtkwave_container: QWidget | None = None
+
+        self._waveform_status_label = QLabel(self)
+        self._waveform_status_label.setStyleSheet("QLabel { padding: 2px 6px; color: #555; }")
+        self._waveform_status_label.setText("Noch keine Simulation ausgefuehrt.")
+
+        self._waveform_stack = QStackedWidget(self)
+        self._waveform_stack.addWidget(self._gtkwave_page)  # index 0
+        self._waveform_stack.addWidget(self._waveform_viewer)  # index 1
+
+        self._waveform_tab = QWidget(self)
+        waveform_tab_layout = QVBoxLayout(self._waveform_tab)
+        waveform_tab_layout.setContentsMargins(0, 0, 0, 0)
+        waveform_tab_layout.setSpacing(0)
+        waveform_tab_layout.addWidget(self._waveform_status_label)
+        waveform_tab_layout.addWidget(self._waveform_stack)
+
         self._editor_tabs = QTabWidget(self)
         self._editor_tabs.setTabsClosable(True)
         self._editor_tabs.tabCloseRequested.connect(self._close_editor_tab)
 
         self._central_tabs = QTabWidget(self)
         self._central_tabs.addTab(self._editor_tabs, "Editor")
-        self._central_tabs.addTab(self._waveform_viewer, "Wellenformen")
+        self._central_tabs.addTab(self._waveform_tab, "Wellenformen")
         self.setCentralWidget(self._central_tabs)
 
         files_dock = QDockWidget("Projektdateien", self)
@@ -82,6 +112,7 @@ class MainWindow(QMainWindow):
         self._create_toolbar()
         self._create_simulation_bar()
         self._pending_after_run: str | None = None
+        self._current_vcd_path: str | None = None
 
     def _create_menu(self) -> None:
         menu_bar = self.menuBar()
@@ -212,6 +243,8 @@ class MainWindow(QMainWindow):
         dialog = RunSettingsDialog(self._settings, self._run_options, self)
         if dialog.exec():
             dialog.apply()
+            if self._current_vcd_path:
+                self._start_gtkwave_for(self._current_vcd_path)
 
     def _show_about(self) -> None:
         QMessageBox.about(
@@ -363,5 +396,56 @@ class MainWindow(QMainWindow):
         except Exception as exc:  # noqa: BLE001
             self._log_console.append_error(f"VCD-Datei konnte nicht gelesen werden: {exc}")
             return
+
+        # Der interne Viewer wird immer sofort befuellt, damit unabhaengig
+        # vom Ergebnis der GTKWave-Einbettung stets eine funktionierende
+        # Anzeige vorhanden ist (Fallback-Garantie).
         self._waveform_viewer.set_data(data)
-        self._central_tabs.setCurrentWidget(self._waveform_viewer)
+        self._waveform_stack.setCurrentIndex(_WAVEFORM_PAGE_INTERNAL)
+        self._central_tabs.setCurrentWidget(self._waveform_tab)
+
+        self._current_vcd_path = vcd_path
+        self._start_gtkwave_for(vcd_path)
+
+    def _start_gtkwave_for(self, vcd_path: str) -> None:
+        self._gtkwave_embedder.stop()
+        self._clear_gtkwave_container()
+
+        if not self._settings.gtkwave_integration_enabled:
+            self._waveform_status_label.setText("Wellenform-Anzeige: interner Viewer (GTKWave-Integration deaktiviert).")
+            return
+
+        gtkwave_executable = self._settings.gtkwave_executable
+        if not gtkwave_executable:
+            self._waveform_status_label.setText(
+                "Wellenform-Anzeige: interner Viewer (GTKWave nicht gefunden - Pfad in den Einstellungen pruefen)."
+            )
+            return
+
+        self._waveform_status_label.setText(
+            "GTKWave wird gestartet und eingebettet... (kann einige Sekunden dauern)"
+        )
+        self._gtkwave_embedder.start(gtkwave_executable, vcd_path, self._gtkwave_page)
+
+    def _clear_gtkwave_container(self) -> None:
+        if self._gtkwave_container is not None:
+            self._gtkwave_page_layout.removeWidget(self._gtkwave_container)
+            self._gtkwave_container.deleteLater()
+            self._gtkwave_container = None
+
+    def _on_gtkwave_embedded(self, container: QWidget) -> None:
+        self._clear_gtkwave_container()
+        self._gtkwave_container = container
+        self._gtkwave_page_layout.addWidget(container)
+        self._waveform_stack.setCurrentIndex(_WAVEFORM_PAGE_GTKWAVE)
+        self._waveform_status_label.setText("Wellenform-Anzeige: GTKWave (eingebettet).")
+        self._log_console.append_success("GTKWave wurde erfolgreich in den Wellenformen-Tab eingebettet.")
+
+    def _on_gtkwave_failed(self, reason: str) -> None:
+        self._waveform_status_label.setText(f"Wellenform-Anzeige: interner Viewer (GTKWave: {reason})")
+        self._log_console.append_output(f"GTKWave-Einbettung nicht verfuegbar: {reason}")
+        self._waveform_stack.setCurrentIndex(_WAVEFORM_PAGE_INTERNAL)
+
+    def closeEvent(self, event) -> None:  # noqa: N802 (Qt override)
+        self._gtkwave_embedder.stop()
+        super().closeEvent(event)

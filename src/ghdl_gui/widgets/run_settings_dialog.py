@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -26,6 +27,7 @@ from ghdl_gui.ghdl_commands import (
     find_ghdl_executable,
     get_ghdl_version,
 )
+from ghdl_gui.gtkwave_embed import find_gtkwave_executable, is_embedding_supported
 from ghdl_gui.settings import AppSettings
 
 
@@ -52,6 +54,27 @@ class RunSettingsDialog(QDialog):
         self._std_combo = QComboBox(self)
         self._std_combo.addItems(VHDL_STANDARDS)
         self._std_combo.setCurrentText(run_options.std)
+
+        self._gtkwave_path_edit = QLineEdit(settings.gtkwave_executable, self)
+        gtkwave_browse_button = QPushButton("Durchsuchen...", self)
+        gtkwave_browse_button.clicked.connect(self._on_browse_gtkwave)
+        gtkwave_detect_button = QPushButton("Automatisch erkennen", self)
+        gtkwave_detect_button.clicked.connect(self._on_autodetect_gtkwave)
+        gtkwave_path_row = QHBoxLayout()
+        gtkwave_path_row.addWidget(self._gtkwave_path_edit)
+        gtkwave_path_row.addWidget(gtkwave_browse_button)
+        gtkwave_path_row.addWidget(gtkwave_detect_button)
+
+        self._gtkwave_enabled_check = QCheckBox(
+            "GTKWave im Wellenformen-Tab einbetten (falls verfuegbar)", self
+        )
+        self._gtkwave_enabled_check.setChecked(settings.gtkwave_integration_enabled)
+        if not is_embedding_supported():
+            self._gtkwave_enabled_check.setToolTip(
+                "Fenster-Einbettung wird auf dieser Plattform nicht unterstuetzt "
+                "(nur Linux/X11 und Windows). GTKWave wird stattdessen als "
+                "eigenstaendiges Fenster geoeffnet."
+            )
 
         # Top-Level-Entity und Stop-Zeit werden direkt auf der Hauptseite in
         # der Simulations-Werkzeugleiste festgelegt (klickbare Auswahl aus
@@ -97,6 +120,8 @@ class RunSettingsDialog(QDialog):
         form.addRow("GHDL-Executable:", ghdl_path_row)
         form.addRow("", check_button)
         form.addRow("VHDL-Standard:", self._std_combo)
+        form.addRow("GTKWave-Executable:", gtkwave_path_row)
+        form.addRow("", self._gtkwave_enabled_check)
         form.addRow("Analyze-Flags (ghdl -a):", analyze_flags_row)
         form.addRow("Elaborate-Flags (ghdl -e):", elaborate_flags_row)
         form.addRow("Run-Flags (ghdl -r):", run_flags_row)
@@ -128,6 +153,20 @@ class RunSettingsDialog(QDialog):
                 self, "Nicht gefunden", "GHDL wurde nicht im PATH gefunden. Bitte manuell auswaehlen."
             )
 
+    def _on_browse_gtkwave(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "GTKWave-Executable auswaehlen")
+        if path:
+            self._gtkwave_path_edit.setText(path)
+
+    def _on_autodetect_gtkwave(self) -> None:
+        found = find_gtkwave_executable()
+        if found:
+            self._gtkwave_path_edit.setText(found)
+        else:
+            QMessageBox.warning(
+                self, "Nicht gefunden", "GTKWave wurde nicht im PATH gefunden. Bitte manuell auswaehlen."
+            )
+
     def _on_check_version(self) -> None:
         path = self._ghdl_path_edit.text().strip()
         if not path:
@@ -151,6 +190,8 @@ class RunSettingsDialog(QDialog):
 
     def apply(self) -> None:
         self._settings.ghdl_executable = self._ghdl_path_edit.text().strip()
+        self._settings.gtkwave_executable = self._gtkwave_path_edit.text().strip()
+        self._settings.gtkwave_integration_enabled = self._gtkwave_enabled_check.isChecked()
         self._settings.vhdl_std = self._std_combo.currentText()
         self._run_options.std = self._std_combo.currentText()
         analyze_flags = self._analyze_flags_edit.text().split()
