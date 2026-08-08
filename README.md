@@ -80,6 +80,23 @@ tests/                        # Unit-Tests für die Qt-unabhängigen Module
   - Unter Linux wird zusätzlich das Python-Paket `python-xlib` benötigt, um GTKWave einzubetten
     (wird automatisch mit `pip install -r requirements.txt` installiert)
 
+### Fehlerbehebung: "GTKWave-Fenster wurde nicht rechtzeitig gefunden (Timeout)"
+
+GTKWave öffnet sich dann zwar als **eigenständiges** Fenster (die Simulation ist nicht
+betroffen), wird aber nicht in den Tab "Wellenformen" eingebettet. Mögliche Ursachen:
+
+1. **`python-xlib` fehlt in der aktuellen Python-Umgebung.** Häufig, wenn das virtuelle
+   Environment vor der Einführung der GTKWave-Integration erstellt wurde. Lösung: im
+   aktivierten venv `pip install -r requirements.txt` (oder gezielt `pip install python-xlib`)
+   erneut ausführen. Die Statusmeldung im Wellenformen-Tab zeigt an, ob `python-xlib`
+   erkannt wurde.
+2. **Langsamer Fenstermanager/Compositor** (z. B. unter WSLg): GTKWave braucht manchmal
+   länger als der Timeout, bis sein Fenster vollständig registriert ist. Klicke in diesem
+   Fall einfach auf den Button "GTKWave erneut versuchen", der nach einem Fehlschlag im
+   Wellenformen-Tab erscheint.
+3. Nach einer Korrektur (z. B. `python-xlib` nachinstalliert) muss GHDL Studio **nicht**
+   neu gestartet werden — der "Erneut versuchen"-Button startet GTKWave einfach erneut.
+
 ## Installation
 
 ```bash
