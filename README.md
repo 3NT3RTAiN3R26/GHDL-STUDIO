@@ -176,6 +176,8 @@ affected) but is not embedded in the "Waveforms" tab. Possible causes:
 
 ## Installation
 
+### Development install (editable)
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
@@ -183,11 +185,54 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-The last step (`pip install -e .`) installs the `ghdl_studio` package itself
-(editable, i.e. source changes take effect immediately) and is **required**
-for `python -m ghdl_studio` or the `ghdl-studio` command to work. Without it
-startup fails with `No module named ghdl_studio`, because `requirements.txt`
-only installs the PySide6 dependency, not the project itself.
+`pip install -e .` installs the `ghdl_studio` package in **editable** mode
+(source changes take effect immediately). It is required for
+`python -m ghdl_studio` / `ghdl-studio` during development. Without it, startup
+fails with `No module named ghdl_studio`, because `requirements.txt` only
+installs dependencies, not the project itself.
+
+### Permanent install (Linux / WSL)
+
+For day-to-day use, install into a dedicated virtualenv with a normal
+(non-editable) `pip install .` and put that venv on your `PATH`. You can then
+run `ghdl-studio` from any directory without activating a project-local `.venv`.
+
+Prerequisites: Python 3.9+ and GHDL on `PATH` (e.g. `sudo apt install ghdl`).
+
+```bash
+# Clone (or use an existing checkout)
+git clone https://github.com/3NT3RTAiN3R26/GHDL-STUDIO.git
+cd GHDL-STUDIO
+git checkout main
+git pull
+
+# Dedicated venv (lives outside the repo)
+python3 -m venv ~/.venvs/ghdl-studio
+source ~/.venvs/ghdl-studio/bin/activate
+pip install -U pip
+pip install .
+
+# Persist PATH so `ghdl-studio` works in new shells
+grep -q '\.venvs/ghdl-studio/bin' ~/.bashrc || \
+  echo 'export PATH="$HOME/.venvs/ghdl-studio/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+
+# Launch from any directory
+ghdl-studio
+```
+
+**Upgrade later:**
+
+```bash
+cd GHDL-STUDIO
+git pull
+source ~/.venvs/ghdl-studio/bin/activate
+pip install .
+```
+
+`pip install -e .` is for development only; `pip install .` is the permanent
+install. Keep the venv (and optionally the clone for upgrades); you do not need
+to activate the project directory’s `.venv` each time.
 
 ## Launch
 
@@ -195,7 +240,7 @@ only installs the PySide6 dependency, not the project itself.
 python -m ghdl_studio
 ```
 
-or, thanks to the editable install:
+or, after install:
 
 ```bash
 ghdl-studio
