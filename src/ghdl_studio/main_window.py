@@ -1,4 +1,4 @@
-"""Hauptfenster der GHDL-GUI."""
+"""Hauptfenster von GHDL Studio."""
 
 from __future__ import annotations
 
@@ -20,22 +20,22 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ghdl_gui.ghdl_commands import (
+from ghdl_studio.ghdl_commands import (
     RunOptions,
     build_analyze_args,
     build_elaborate_args,
     build_run_args,
 )
-from ghdl_gui.ghdl_runner import GhdlRunner
-from ghdl_gui.gtkwave_embed import GtkWaveEmbedder
-from ghdl_gui.settings import AppSettings
-from ghdl_gui.vcd_parser import parse_vcd
-from ghdl_gui.vhdl_scanner import find_vhdl_entities, is_verilog_file, is_vhdl_file
-from ghdl_gui.widgets.code_editor import CodeEditor
-from ghdl_gui.widgets.file_explorer import FileExplorer
-from ghdl_gui.widgets.log_console import LogConsole
-from ghdl_gui.widgets.run_settings_dialog import RunSettingsDialog
-from ghdl_gui.widgets.waveform_viewer import WaveformViewer
+from ghdl_studio.ghdl_runner import GhdlRunner
+from ghdl_studio.gtkwave_embed import GtkWaveEmbedder
+from ghdl_studio.settings import AppSettings
+from ghdl_studio.vcd_parser import parse_vcd
+from ghdl_studio.vhdl_scanner import find_vhdl_entities, is_verilog_file, is_vhdl_file
+from ghdl_studio.widgets.code_editor import CodeEditor
+from ghdl_studio.widgets.file_explorer import FileExplorer
+from ghdl_studio.widgets.log_console import LogConsole
+from ghdl_studio.widgets.run_settings_dialog import RunSettingsDialog
+from ghdl_studio.widgets.waveform_viewer import WaveformViewer
 
 _WAVEFORM_PAGE_GTKWAVE = 0
 _WAVEFORM_PAGE_INTERNAL = 1
@@ -44,7 +44,7 @@ _WAVEFORM_PAGE_INTERNAL = 1
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("GHDL GUI")
+        self.setWindowTitle("GHDL Studio")
         self.resize(1100, 750)
 
         self._settings = AppSettings()
@@ -158,7 +158,7 @@ class MainWindow(QMainWindow):
         settings_menu.addAction(preferences_action)
 
         help_menu = menu_bar.addMenu("&Hilfe")
-        about_action = QAction("Ueber GHDL GUI", self)
+        about_action = QAction("Ueber GHDL Studio", self)
         about_action.triggered.connect(self._show_about)
         help_menu.addAction(about_action)
 
@@ -249,8 +249,8 @@ class MainWindow(QMainWindow):
     def _show_about(self) -> None:
         QMessageBox.about(
             self,
-            "Ueber GHDL GUI",
-            "GHDL GUI\n\nEine plattformunabhaengige Oberflaeche fuer den "
+            "Ueber GHDL Studio",
+            "GHDL Studio\n\nEine plattformunabhaengige Oberflaeche fuer den "
             "VHDL-Simulator GHDL, entwickelt mit Python und PySide6.",
         )
 

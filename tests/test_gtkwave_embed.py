@@ -4,7 +4,7 @@ import pytest
 
 QtWidgets = pytest.importorskip("PySide6.QtWidgets")
 
-from ghdl_gui.gtkwave_embed import (  # noqa: E402
+from ghdl_studio.gtkwave_embed import (  # noqa: E402
     GtkWaveEmbedder,
     find_gtkwave_executable,
     is_embedding_supported,

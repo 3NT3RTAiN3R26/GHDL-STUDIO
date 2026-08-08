@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ghdl_gui.vhdl_scanner import is_verilog_file
+from ghdl_studio.vhdl_scanner import is_verilog_file
 
 _VERILOG_COLOR = QColor("#c586c0")
 

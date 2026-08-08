@@ -6,12 +6,12 @@ import sys
 
 from PySide6.QtWidgets import QApplication
 
-from ghdl_gui.main_window import MainWindow
+from ghdl_studio.main_window import MainWindow
 
 
 def main() -> int:
     app = QApplication(sys.argv)
-    app.setApplicationName("GHDL GUI")
+    app.setApplicationName("GHDL Studio")
     window = MainWindow()
     window.show()
     return app.exec()

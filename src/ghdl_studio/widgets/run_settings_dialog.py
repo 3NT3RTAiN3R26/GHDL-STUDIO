@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ghdl_gui.ghdl_commands import (
+from ghdl_studio.ghdl_commands import (
     DEFAULT_ANALYZE_EXTRA_ARGS,
     DEFAULT_ELABORATE_EXTRA_ARGS,
     DEFAULT_RUN_EXTRA_ARGS,
@@ -27,8 +27,8 @@ from ghdl_gui.ghdl_commands import (
     find_ghdl_executable,
     get_ghdl_version,
 )
-from ghdl_gui.gtkwave_embed import find_gtkwave_executable, is_embedding_supported
-from ghdl_gui.settings import AppSettings
+from ghdl_studio.gtkwave_embed import find_gtkwave_executable, is_embedding_supported
+from ghdl_studio.settings import AppSettings
 
 
 class RunSettingsDialog(QDialog):

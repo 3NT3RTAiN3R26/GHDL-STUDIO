@@ -1,4 +1,4 @@
-from ghdl_gui.ghdl_commands import (
+from ghdl_studio.ghdl_commands import (
     DEFAULT_ANALYZE_EXTRA_ARGS,
     DEFAULT_ELABORATE_EXTRA_ARGS,
     DEFAULT_RUN_EXTRA_ARGS,

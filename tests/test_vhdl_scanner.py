@@ -1,4 +1,4 @@
-from ghdl_gui.vhdl_scanner import (
+from ghdl_studio.vhdl_scanner import (
     find_verilog_modules,
     find_vhdl_entities,
     is_verilog_file,

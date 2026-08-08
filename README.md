@@ -1,8 +1,8 @@
-# GHDL GUI
+# GHDL Studio
 
 Eine plattformunabhängige grafische Oberfläche für [GHDL](https://ghdl.github.io/ghdl/),
 den quelloffenen VHDL-Simulator. Entwickelt mit **Python** und **PySide6** (Qt for Python),
-läuft die GUI unverändert unter Linux, Windows und macOS.
+läuft GHDL Studio unverändert unter Linux, Windows und macOS.
 
 ## Funktionsumfang (aktueller Stand)
 
@@ -43,7 +43,7 @@ läuft die GUI unverändert unter Linux, Windows und macOS.
 ## Projektstruktur
 
 ```
-src/ghdl_gui/
+src/ghdl_studio/
 ├── app.py                 # Einstiegspunkt (QApplication + MainWindow)
 ├── main_window.py          # Hauptfenster, verbindet alle Widgets
 ├── ghdl_commands.py         # Reine Funktionen zum Bauen von GHDL-CLI-Argumenten (Qt-frei, testbar)
@@ -89,22 +89,22 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-Der letzte Schritt (`pip install -e .`) installiert das `ghdl_gui`-Paket selbst
+Der letzte Schritt (`pip install -e .`) installiert das `ghdl_studio`-Paket selbst
 (editierbar, d. h. Änderungen am Quellcode wirken sofort) und ist **erforderlich**,
-damit `python -m ghdl_gui` bzw. der Befehl `ghdl-gui` funktionieren. Ohne diesen
-Schritt bricht der Start mit `No module named ghdl_gui` ab, da `requirements.txt`
+damit `python -m ghdl_studio` bzw. der Befehl `ghdl-studio` funktionieren. Ohne diesen
+Schritt bricht der Start mit `No module named ghdl_studio` ab, da `requirements.txt`
 nur die Abhängigkeit PySide6 installiert, nicht das Projekt selbst.
 
 ## Start
 
 ```bash
-python -m ghdl_gui
+python -m ghdl_studio
 ```
 
 oder, dank der editierbaren Installation:
 
 ```bash
-ghdl-gui
+ghdl-studio
 ```
 
 ## Beispielprojekt ausprobieren

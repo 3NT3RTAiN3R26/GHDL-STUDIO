@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ghdl_gui.vcd_parser import (
+from ghdl_studio.vcd_parser import (
     VcdData,
     VcdSignal,
     choose_time_unit,

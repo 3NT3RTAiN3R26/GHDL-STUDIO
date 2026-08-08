@@ -9,17 +9,17 @@ from __future__ import annotations
 
 from PySide6.QtCore import QSettings
 
-from ghdl_gui.ghdl_commands import (
+from ghdl_studio.ghdl_commands import (
     DEFAULT_ANALYZE_EXTRA_ARGS,
     DEFAULT_ELABORATE_EXTRA_ARGS,
     DEFAULT_RUN_EXTRA_ARGS,
     DEFAULT_STD,
     find_ghdl_executable,
 )
-from ghdl_gui.gtkwave_embed import find_gtkwave_executable
+from ghdl_studio.gtkwave_embed import find_gtkwave_executable
 
-ORG_NAME = "GhdlGui"
-APP_NAME = "GhdlGui"
+ORG_NAME = "GhdlStudio"
+APP_NAME = "GhdlStudio"
 
 
 class AppSettings:

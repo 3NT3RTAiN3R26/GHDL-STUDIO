@@ -8,7 +8,7 @@ from PySide6.QtCore import Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QPlainTextEdit, QWidget
 
-from ghdl_gui.widgets.vhdl_highlighter import VhdlHighlighter
+from ghdl_studio.widgets.vhdl_highlighter import VhdlHighlighter
 
 
 class CodeEditor(QPlainTextEdit):
