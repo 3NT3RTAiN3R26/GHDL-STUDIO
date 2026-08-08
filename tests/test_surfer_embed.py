@@ -92,10 +92,11 @@ def test_ensure_linux_xcb_platform_sets_xcb_when_probe_succeeds(monkeypatch):
         monkeypatch.setattr(sys, "platform", "linux")
     monkeypatch.delenv("QT_QPA_PLATFORM", raising=False)
     monkeypatch.delenv("GHDL_STUDIO_SKIP_PLATFORM_PROBE", raising=False)
+    monkeypatch.delenv("GHDL_STUDIO_PREFER_WAYLAND", raising=False)
     monkeypatch.setenv("DISPLAY", ":99")
     monkeypatch.setattr(
         "ghdl_studio.surfer_embed.probe_qt_platform",
-        lambda platform, timeout_s=10.0: platform == "xcb",
+        lambda platform, timeout_s=10.0: (platform == "xcb", ""),
     )
     ensure_linux_xcb_platform()
     assert os.environ.get("QT_QPA_PLATFORM") == "xcb"
@@ -106,11 +107,12 @@ def test_ensure_linux_xcb_platform_falls_back_to_wayland_when_xcb_probe_fails(mo
         monkeypatch.setattr(sys, "platform", "linux")
     monkeypatch.delenv("QT_QPA_PLATFORM", raising=False)
     monkeypatch.delenv("GHDL_STUDIO_SKIP_PLATFORM_PROBE", raising=False)
+    monkeypatch.delenv("GHDL_STUDIO_PREFER_WAYLAND", raising=False)
     monkeypatch.setenv("DISPLAY", ":99")
     monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-0")
     monkeypatch.setattr(
         "ghdl_studio.surfer_embed.probe_qt_platform",
-        lambda platform, timeout_s=10.0: platform == "wayland",
+        lambda platform, timeout_s=10.0: (platform == "wayland", ""),
     )
     ensure_linux_xcb_platform()
     assert os.environ.get("QT_QPA_PLATFORM") == "wayland"
@@ -121,22 +123,40 @@ def test_ensure_linux_xcb_platform_overrides_broken_xcb_env(monkeypatch):
         monkeypatch.setattr(sys, "platform", "linux")
     monkeypatch.setenv("QT_QPA_PLATFORM", "xcb")
     monkeypatch.delenv("GHDL_STUDIO_SKIP_PLATFORM_PROBE", raising=False)
+    monkeypatch.delenv("GHDL_STUDIO_PREFER_WAYLAND", raising=False)
     monkeypatch.setenv("DISPLAY", ":0")
     monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-0")
     monkeypatch.setattr(
         "ghdl_studio.surfer_embed.probe_qt_platform",
-        lambda platform, timeout_s=10.0: platform == "wayland",
+        lambda platform, timeout_s=10.0: (platform == "wayland", ""),
     )
     ensure_linux_xcb_platform()
     assert os.environ.get("QT_QPA_PLATFORM") == "wayland"
 
 
-def test_ensure_linux_xcb_platform_respects_explicit_wayland(monkeypatch):
+def test_ensure_linux_xcb_platform_upgrades_wayland_env_when_xcb_works(monkeypatch):
+    """Frueherer Workaround 'export QT_QPA_PLATFORM=wayland' darf xcb nicht blockieren."""
     if not sys.platform.startswith("linux"):
         monkeypatch.setattr(sys, "platform", "linux")
     monkeypatch.setenv("QT_QPA_PLATFORM", "wayland")
+    monkeypatch.delenv("GHDL_STUDIO_SKIP_PLATFORM_PROBE", raising=False)
+    monkeypatch.delenv("GHDL_STUDIO_PREFER_WAYLAND", raising=False)
     monkeypatch.setenv("DISPLAY", ":0")
-    # Probe darf nicht aufgerufen werden / Ergebnis egal
+    monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-0")
+    monkeypatch.setattr(
+        "ghdl_studio.surfer_embed.probe_qt_platform",
+        lambda platform, timeout_s=10.0: (platform == "xcb", ""),
+    )
+    ensure_linux_xcb_platform()
+    assert os.environ.get("QT_QPA_PLATFORM") == "xcb"
+
+
+def test_ensure_linux_xcb_platform_respects_prefer_wayland(monkeypatch):
+    if not sys.platform.startswith("linux"):
+        monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "wayland")
+    monkeypatch.setenv("GHDL_STUDIO_PREFER_WAYLAND", "1")
+    monkeypatch.setenv("DISPLAY", ":0")
     monkeypatch.setattr(
         "ghdl_studio.surfer_embed.probe_qt_platform",
         lambda platform, timeout_s=10.0: (_ for _ in ()).throw(AssertionError("probe sollte nicht laufen")),

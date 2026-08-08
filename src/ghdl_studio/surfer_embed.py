@@ -113,16 +113,29 @@ def is_xcb_cursor_available() -> bool:
         return False
 
 
-def probe_qt_platform(platform: str, timeout_s: float = 10.0) -> bool:
+_XCB_APT_PACKAGES = (
+    "libxcb-cursor0 libxcb-xinerama0 libxcb-icccm4 libxcb-image0 "
+    "libxcb-keysyms1 libxcb-render-util0 libxcb-shape0 libxcb-randr0 "
+    "libxkbcommon-x11-0 libxcb-util1"
+)
+
+
+def probe_qt_platform(platform: str, timeout_s: float = 10.0) -> tuple[bool, str]:
     """Startet einen kurzen Subprozess, der ``QGuiApplication`` mit
-    ``QT_QPA_PLATFORM=<platform>`` erzeugt. Gibt ``True`` zurueck, wenn das
-    Plugin wirklich initialisiert — verhindert Abstuerze der Haupt-App, wenn
-    z. B. xcb trotz installiertem ``libxcb-cursor0`` nicht ladbar ist.
+    ``QT_QPA_PLATFORM=<platform>`` erzeugt.
+
+    Gibt ``(ok, stderr_auszug)`` zurueck. Verhindert Abstuerze der Haupt-App,
+    wenn z. B. xcb trotz installiertem ``libxcb-cursor0`` nicht ladbar ist.
     """
     if not sys.platform.startswith("linux"):
-        return False
+        return False, ""
     env = os.environ.copy()
     env["QT_QPA_PLATFORM"] = platform
+    # System-libxcb oft noetig, damit PySide6-Plugins libxcb-cursor finden.
+    lib_dir = "/usr/lib/x86_64-linux-gnu"
+    existing_ld = env.get("LD_LIBRARY_PATH", "")
+    if lib_dir not in existing_ld.split(":"):
+        env["LD_LIBRARY_PATH"] = f"{lib_dir}:{existing_ld}" if existing_ld else lib_dir
     # Probe soll nicht selbst wieder proben / keine Rekursion ausloesen.
     env["GHDL_STUDIO_SKIP_PLATFORM_PROBE"] = "1"
     code = (
@@ -139,19 +152,19 @@ def probe_qt_platform(platform: str, timeout_s: float = 10.0) -> bool:
             timeout=timeout_s,
             check=False,
         )
-        return result.returncode == 0
-    except (OSError, subprocess.TimeoutExpired):
-        return False
+        err = (result.stderr or b"").decode("utf-8", errors="replace").strip()
+        return result.returncode == 0, err
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return False, str(exc)
 
 
 def ensure_linux_xcb_platform() -> None:
     """Waehlt ein sicheres Qt-Platform-Plugin unter Linux *vor* ``QApplication``.
 
-    Bevorzugt ``xcb`` (noetig fuer Surfer-Einbettung), aber nur wenn ein
-    echter Probe-Start mit Qt gelingt. Schlaegt xcb fehl — auch bei
-    installiertem ``libxcb-cursor0``, wie unter manchen WSL-Setups —
-    wird bei vorhandenem ``WAYLAND_DISPLAY`` auf ``wayland`` ausgewichen,
-    statt die Hauptanwendung abstuerzen zu lassen.
+    Bevorzugt immer ``xcb``, sobald der Probe-Start gelingt — auch wenn in der
+    Shell noch ``QT_QPA_PLATFORM=wayland`` steht (haeufiger Workaround). Nur so
+    wird Surfer-Einbettung wieder moeglich. Schlaegt xcb fehl, Fallback auf
+    ``wayland`` (GUI startet, Einbettung nicht).
     """
     if not sys.platform.startswith("linux"):
         return
@@ -161,35 +174,50 @@ def ensure_linux_xcb_platform() -> None:
     existing = (os.environ.get("QT_QPA_PLATFORM") or "").strip()
     has_display = bool(os.environ.get("DISPLAY"))
     has_wayland = bool(os.environ.get("WAYLAND_DISPLAY"))
+    prefer_wayland = os.environ.get("GHDL_STUDIO_PREFER_WAYLAND") == "1"
 
     # Explizite Nutzerwahl ausser xcb/wayland nicht anfassen.
     if existing and existing not in ("xcb", "wayland"):
         return
-    # wayland bewusst gesetzt → respektieren.
-    if existing == "wayland":
+    if prefer_wayland and existing == "wayland":
         return
 
-    apt_hint = "sudo apt install libxcb-cursor0"
-    if has_display and probe_qt_platform("xcb"):
-        os.environ["QT_QPA_PLATFORM"] = "xcb"
-        return
+    # LD_LIBRARY_PATH fuer die Haupt-App ebenfalls setzen (wie in der Probe).
+    lib_dir = "/usr/lib/x86_64-linux-gnu"
+    existing_ld = os.environ.get("LD_LIBRARY_PATH", "")
+    if lib_dir not in existing_ld.split(":"):
+        os.environ["LD_LIBRARY_PATH"] = f"{lib_dir}:{existing_ld}" if existing_ld else lib_dir
 
-    if has_wayland and probe_qt_platform("wayland"):
-        print(
-            "Hinweis: Qt-xcb ist nicht nutzbar"
-            + (" (libxcb-cursor scheint zu fehlen)" if not is_xcb_cursor_available() else "")
-            + " — starte mit QT_QPA_PLATFORM=wayland. "
-            "Surfer-Einbettung ist dann nicht verfuegbar; interner Viewer bleibt aktiv.\n"
-            f"Fuer Einbettung wie unter Windows: {apt_hint}\n"
-            "Falls das Paket schon installiert ist, zusaetzlich typische Qt-X11-Deps:\n"
-            "  sudo apt install libxcb-xinerama0 libxcb-icccm4 libxcb-image0 "
-            "libxcb-keysyms1 libxcb-render-util0 libxkbcommon-x11-0\n"
-            "Debug: QT_DEBUG_PLUGINS=1 QT_QPA_PLATFORM=xcb python3 -c "
-            "\"from PySide6.QtWidgets import QApplication; QApplication([])\"",
-            file=sys.stderr,
-        )
-        os.environ["QT_QPA_PLATFORM"] = "wayland"
-        return
+    apt_hint = f"sudo apt install {_XCB_APT_PACKAGES}"
+    xcb_err = ""
+    if has_display and not prefer_wayland:
+        ok, xcb_err = probe_qt_platform("xcb")
+        if ok:
+            if existing == "wayland":
+                print(
+                    "Hinweis: QT_QPA_PLATFORM=wayland war gesetzt, wechsle zu xcb "
+                    "(noetig fuer Surfer-Einbettung). Fuer Wayland: "
+                    "export GHDL_STUDIO_PREFER_WAYLAND=1",
+                    file=sys.stderr,
+                )
+            os.environ["QT_QPA_PLATFORM"] = "xcb"
+            return
+
+    if has_wayland:
+        ok, _ = probe_qt_platform("wayland")
+        if ok:
+            print(
+                "Hinweis: Qt-xcb ist nicht nutzbar — starte mit QT_QPA_PLATFORM=wayland.\n"
+                "Surfer-Einbettung ist dann nicht verfuegbar; interner Viewer bleibt aktiv.\n"
+                f"Fuer Einbettung wie unter Windows:\n  {apt_hint}\n"
+                "Danach: unset QT_QPA_PLATFORM && ghdl-studio\n"
+                + (f"xcb-Probe-Fehler: {xcb_err}\n" if xcb_err else "")
+                + "Debug: QT_DEBUG_PLUGINS=1 QT_QPA_PLATFORM=xcb python3 -c "
+                "\"from PySide6.QtWidgets import QApplication; QApplication([])\"",
+                file=sys.stderr,
+            )
+            os.environ["QT_QPA_PLATFORM"] = "wayland"
+            return
 
     print(
         "Fehler: Weder Qt-xcb noch Qt-wayland konnten initialisiert werden.\n"

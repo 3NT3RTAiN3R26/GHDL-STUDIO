@@ -130,25 +130,22 @@ betroffen), wird aber nicht in den Tab "Wellenformen" eingebettet. Mögliche Urs
    `pip install -r requirements.txt` erneut ausführen.
 3. **Langsamer Fenstermanager/Compositor** (z. B. unter WSLg): auf
    „Surfer erneut versuchen“ klicken.
-4. **App startet nicht: `libxcb-cursor0 is needed` / xcb-Plugin (auch wenn das Paket installiert ist):**  
-   Sofort-Workaround:
-   ```bash
-   unset QT_QPA_PLATFORM
-   export QT_QPA_PLATFORM=wayland
-   ghdl-studio
-   ```
-   Aktueller Branch prüft xcb per echtem Qt-Probe und fällt sonst auf Wayland zurück:
-   ```bash
-   git pull origin cursor/ghdl-gui-pyside6-scaffold-85f1
-   pip install -e .
-   unset QT_QPA_PLATFORM
-   ghdl-studio
-   ```
-   Für Surfer-Einbettung wie unter Windows zusätzlich:
+4. **Surfer-Einbettung meldet `aktuell: wayland`:** Einbettung braucht Qt-xcb.
+   Oft steckt noch `export QT_QPA_PLATFORM=wayland` in der Shell (früherer Workaround).
    ```bash
    sudo apt install libxcb-cursor0 libxcb-xinerama0 libxcb-icccm4 \
-     libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxkbcommon-x11-0
+     libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-shape0 \
+     libxcb-randr0 libxkbcommon-x11-0 libxcb-util1
+   unset QT_QPA_PLATFORM
+   # xcb-Test (muss ohne Abbruch durchlaufen):
+   QT_QPA_PLATFORM=xcb python3 -c "from PySide6.QtWidgets import QApplication; print(QApplication([]).platformName())"
+   git pull origin cursor/ghdl-gui-pyside6-scaffold-85f1
+   pip install -e .
+   ghdl-studio
    ```
+   Die App bevorzugt xcb automatisch, sobald der Probe gelingt — auch wenn zuvor
+   `QT_QPA_PLATFORM=wayland` gesetzt war. Wayland erzwingen nur bei Bedarf mit
+   `export GHDL_STUDIO_PREFER_WAYLAND=1`.
 5. **`platform plugin does not support foreign windows` (WSL/Wayland):** GHDL Studio setzt
    beim Start automatisch `QT_QPA_PLATFORM=xcb`, sofern `libxcb-cursor` gefunden wird.
    App komplett neu starten. Bei manuell gesetztem `QT_QPA_PLATFORM=wayland`:
