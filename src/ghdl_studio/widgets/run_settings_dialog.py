@@ -191,9 +191,13 @@ class RunSettingsDialog(QDialog):
             QMessageBox.warning(
                 self,
                 "Nicht gefunden",
-                "Surfer wurde nicht im PATH gefunden. Bitte manuell auswaehlen.\n"
-                "Installation: https://surfer-project.org/ bzw.\n"
-                "cargo install --git https://gitlab.com/surfer-project/surfer.git surfer",
+                "Surfer wurde nicht im PATH gefunden. Bitte manuell auswaehlen.\n\n"
+                "Einfachste Installation (ohne Rust/Cargo):\n"
+                "fertige Binaries von\n"
+                "https://gitlab.com/surfer-project/surfer/-/releases\n"
+                "laden (Linux: surfer_linux_*.zip, Windows: surfer_win_*.zip),\n"
+                "entpacken und den Pfad hier eintragen.\n\n"
+                "Siehe auch README.md Abschnitt Voraussetzungen.",
             )
 
     def _on_check_version(self) -> None:
