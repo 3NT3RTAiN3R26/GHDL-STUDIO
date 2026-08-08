@@ -20,10 +20,23 @@
 SetVHDLVersion 2008
 SetSaveWaves true
 
-# Compile the OSVVM utility library (library osvvm) from the same
-# OsvvmLibraries tree that StartUp.tcl loaded. Required because adder_tb
+# Resolve OsvvmLibraries root as set by StartUp.tcl / StartUpShared.tcl:
+#   ::osvvm::OsvvmHomeDirectory  (namespace)
+#   ::OsvvmLibraries             (global alias — NOT ::osvvm::OsvvmLibraries)
+if {[info exists ::osvvm::OsvvmHomeDirectory] && $::osvvm::OsvvmHomeDirectory ne ""} {
+  set _osvvmRoot $::osvvm::OsvvmHomeDirectory
+} elseif {[info exists ::OsvvmLibraries] && $::OsvvmLibraries ne ""} {
+  set _osvvmRoot $::OsvvmLibraries
+} elseif {[info exists ::osvvm::OsvvmScriptDirectory]} {
+  set _osvvmRoot [file normalize [file join $::osvvm::OsvvmScriptDirectory ..]]
+} else {
+  error "OSVVM StartUp.tcl did not set OsvvmHomeDirectory / OsvvmLibraries.\n\
+Source …/OsvvmLibraries/Scripts/StartUp.tcl before build."
+}
+
+# Compile the OSVVM utility library (library osvvm). Required because adder_tb
 # uses:  library osvvm; context osvvm.OsvvmContext;
-set _osvvmUtil [file normalize [file join $::osvvm::OsvvmLibraries osvvm]]
+set _osvvmUtil [file normalize [file join $_osvvmRoot osvvm]]
 if {![file isdirectory $_osvvmUtil]} {
   error "OSVVM utility library not found at '${_osvvmUtil}'.\n\
 Clone OsvvmLibraries with submodules:\n\

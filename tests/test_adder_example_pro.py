@@ -22,7 +22,9 @@ def test_adder_pro_contains_analyze_and_simulate():
     assert "SetVHDLVersion 2008" in text
     # Must pull in library osvvm before analyzing the OSVVM testbench.
     assert "include $_osvvmUtil" in text
-    assert "OsvvmLibraries" in text
+    # StartUpShared.tcl sets global ::OsvvmLibraries / ::osvvm::OsvvmHomeDirectory
+    assert "OsvvmHomeDirectory" in text
+    assert "::OsvvmLibraries" in text
     assert "osvvm" in text
 
 
