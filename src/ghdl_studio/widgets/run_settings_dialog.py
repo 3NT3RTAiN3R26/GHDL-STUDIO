@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 from ghdl_studio.ghdl_commands import (
     DEFAULT_ANALYZE_EXTRA_ARGS,
     DEFAULT_ELABORATE_EXTRA_ARGS,
+    DEFAULT_OUTPUT_DIR,
     DEFAULT_RUN_EXTRA_ARGS,
     VHDL_STANDARDS,
     RunOptions,
@@ -54,6 +55,21 @@ class RunSettingsDialog(QDialog):
         self._std_combo = QComboBox(self)
         self._std_combo.addItems(VHDL_STANDARDS)
         self._std_combo.setCurrentText(run_options.std)
+
+        self._output_dir_edit = QLineEdit(run_options.output_dir, self)
+        self._output_dir_edit.setToolTip(
+            "Verzeichnis, in dem GHDL alle generierten Dateien ablegt (Work-Bibliothek, "
+            "*.o, *.vcd, *.gcda/*.gcno sowie die elaborierte Simulations-Executable), "
+            "damit das Projektverzeichnis nicht zugemuellt wird."
+        )
+        output_dir_browse_button = QPushButton("Durchsuchen...", self)
+        output_dir_browse_button.clicked.connect(self._on_browse_output_dir)
+        output_dir_reset_button = QPushButton("Standard", self)
+        output_dir_reset_button.clicked.connect(self._on_reset_output_dir)
+        output_dir_row = QHBoxLayout()
+        output_dir_row.addWidget(self._output_dir_edit)
+        output_dir_row.addWidget(output_dir_browse_button)
+        output_dir_row.addWidget(output_dir_reset_button)
 
         self._gtkwave_path_edit = QLineEdit(settings.gtkwave_executable, self)
         gtkwave_browse_button = QPushButton("Durchsuchen...", self)
@@ -120,6 +136,7 @@ class RunSettingsDialog(QDialog):
         form.addRow("GHDL-Executable:", ghdl_path_row)
         form.addRow("", check_button)
         form.addRow("VHDL-Standard:", self._std_combo)
+        form.addRow("Ausgabeverzeichnis:", output_dir_row)
         form.addRow("GTKWave-Executable:", gtkwave_path_row)
         form.addRow("", self._gtkwave_enabled_check)
         form.addRow("Analyze-Flags (ghdl -a):", analyze_flags_row)
@@ -152,6 +169,14 @@ class RunSettingsDialog(QDialog):
             QMessageBox.warning(
                 self, "Nicht gefunden", "GHDL wurde nicht im PATH gefunden. Bitte manuell auswaehlen."
             )
+
+    def _on_browse_output_dir(self) -> None:
+        directory = QFileDialog.getExistingDirectory(self, "Ausgabeverzeichnis auswaehlen")
+        if directory:
+            self._output_dir_edit.setText(directory)
+
+    def _on_reset_output_dir(self) -> None:
+        self._output_dir_edit.setText(DEFAULT_OUTPUT_DIR)
 
     def _on_browse_gtkwave(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "GTKWave-Executable auswaehlen")
@@ -194,6 +219,9 @@ class RunSettingsDialog(QDialog):
         self._settings.gtkwave_integration_enabled = self._gtkwave_enabled_check.isChecked()
         self._settings.vhdl_std = self._std_combo.currentText()
         self._run_options.std = self._std_combo.currentText()
+        output_dir = self._output_dir_edit.text().strip() or DEFAULT_OUTPUT_DIR
+        self._run_options.output_dir = output_dir
+        self._settings.output_dir = output_dir
         analyze_flags = self._analyze_flags_edit.text().split()
         self._run_options.extra_analyze_args = analyze_flags
         self._settings.analyze_extra_args = analyze_flags

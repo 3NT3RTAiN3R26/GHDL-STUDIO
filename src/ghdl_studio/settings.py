@@ -12,6 +12,7 @@ from PySide6.QtCore import QSettings
 from ghdl_studio.ghdl_commands import (
     DEFAULT_ANALYZE_EXTRA_ARGS,
     DEFAULT_ELABORATE_EXTRA_ARGS,
+    DEFAULT_OUTPUT_DIR,
     DEFAULT_RUN_EXTRA_ARGS,
     DEFAULT_STD,
     find_ghdl_executable,
@@ -89,6 +90,14 @@ class AppSettings:
     @run_extra_args.setter
     def run_extra_args(self, value: list[str]) -> None:
         self._set("run_extra_args", " ".join(value))
+
+    @property
+    def output_dir(self) -> str:
+        return self._settings.value("output_dir", DEFAULT_OUTPUT_DIR, str) or DEFAULT_OUTPUT_DIR
+
+    @output_dir.setter
+    def output_dir(self, value: str) -> None:
+        self._set("output_dir", value)
 
     @property
     def gtkwave_executable(self) -> str:
