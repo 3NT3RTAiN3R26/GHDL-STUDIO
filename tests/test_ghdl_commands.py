@@ -30,7 +30,7 @@ def test_build_analyze_args_requires_files():
     except ValueError:
         pass
     else:
-        raise AssertionError("Es haette ein ValueError geworfen werden muessen.")
+        raise AssertionError("Expected a ValueError to be raised.")
 
 
 def test_build_elaborate_args():

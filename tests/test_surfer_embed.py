@@ -241,7 +241,7 @@ def test_x11_full_window_tree_fallback_finds_surfer_window(tmp_path):
             if found is None:
                 time.sleep(0.3)
         conn.close()
-        assert found is not None, "Fensterbaum-Fallback haette das Surfer-Fenster finden muessen."
+        assert found is not None, "Window-tree fallback should have found the Surfer window."
     finally:
         if proc.poll() is None:
             proc.kill()
