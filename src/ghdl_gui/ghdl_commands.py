@@ -26,6 +26,17 @@ DEFAULT_ANALYZE_EXTRA_ARGS = (
     "-fPIE",
 )
 
+# Werden standardmaessig bei jedem "ghdl -e" mitgegeben. -Wl,-lgcov linkt die
+# gcov-Laufzeitbibliothek (passend zur Coverage-Instrumentierung aus dem
+# Analyze-Schritt), -fsynopsys/-fPIE muessen konsistent mit dem
+# Analyze-Aufruf gesetzt werden. Ueber den Einstellungsdialog vom Nutzer
+# anpassbar.
+DEFAULT_ELABORATE_EXTRA_ARGS = (
+    "-Wl,-lgcov",
+    "-fsynopsys",
+    "-fPIE",
+)
+
 
 def find_ghdl_executable() -> str | None:
     """Sucht die ghdl-Executable im PATH und gibt den vollen Pfad zurueck."""
@@ -133,7 +144,7 @@ class RunOptions:
     stop_time: str | None = None
     generics: dict[str, str] = field(default_factory=dict)
     extra_analyze_args: list[str] = field(default_factory=lambda: list(DEFAULT_ANALYZE_EXTRA_ARGS))
-    extra_elaborate_args: list[str] = field(default_factory=list)
+    extra_elaborate_args: list[str] = field(default_factory=lambda: list(DEFAULT_ELABORATE_EXTRA_ARGS))
     extra_run_args: list[str] = field(default_factory=list)
 
     def vcd_path(self) -> str:

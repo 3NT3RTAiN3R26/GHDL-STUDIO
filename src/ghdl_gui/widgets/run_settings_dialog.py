@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 
 from ghdl_gui.ghdl_commands import (
     DEFAULT_ANALYZE_EXTRA_ARGS,
+    DEFAULT_ELABORATE_EXTRA_ARGS,
     VHDL_STANDARDS,
     RunOptions,
     find_ghdl_executable,
@@ -67,6 +68,18 @@ class RunSettingsDialog(QDialog):
         analyze_flags_row.addWidget(self._analyze_flags_edit)
         analyze_flags_row.addWidget(reset_analyze_flags_button)
 
+        self._elaborate_flags_edit = QLineEdit(" ".join(run_options.extra_elaborate_args), self)
+        self._elaborate_flags_edit.setPlaceholderText("zusaetzliche Flags fuer ghdl -e, per Leerzeichen getrennt")
+        reset_elaborate_flags_button = QPushButton("Standard", self)
+        reset_elaborate_flags_button.setToolTip(
+            "Setzt die Elaborate-Flags auf die Standardwerte zurueck "
+            "(z. B. sinnvoll fuer GHDL-Builds mit GCC-Backend / Coverage)."
+        )
+        reset_elaborate_flags_button.clicked.connect(self._on_reset_elaborate_flags)
+        elaborate_flags_row = QHBoxLayout()
+        elaborate_flags_row.addWidget(self._elaborate_flags_edit)
+        elaborate_flags_row.addWidget(reset_elaborate_flags_button)
+
         form = QFormLayout()
         form.addRow("GHDL-Executable:", ghdl_path_row)
         form.addRow("", check_button)
@@ -74,6 +87,7 @@ class RunSettingsDialog(QDialog):
         form.addRow("Top-Level-Entity:", self._top_unit_edit)
         form.addRow("Stop-Zeit:", self._stop_time_edit)
         form.addRow("Analyze-Flags (ghdl -a):", analyze_flags_row)
+        form.addRow("Elaborate-Flags (ghdl -e):", elaborate_flags_row)
 
         self._version_label = QLabel("", self)
 
@@ -117,6 +131,9 @@ class RunSettingsDialog(QDialog):
     def _on_reset_analyze_flags(self) -> None:
         self._analyze_flags_edit.setText(" ".join(DEFAULT_ANALYZE_EXTRA_ARGS))
 
+    def _on_reset_elaborate_flags(self) -> None:
+        self._elaborate_flags_edit.setText(" ".join(DEFAULT_ELABORATE_EXTRA_ARGS))
+
     def apply(self) -> None:
         self._settings.ghdl_executable = self._ghdl_path_edit.text().strip()
         self._settings.vhdl_std = self._std_combo.currentText()
@@ -126,3 +143,6 @@ class RunSettingsDialog(QDialog):
         analyze_flags = self._analyze_flags_edit.text().split()
         self._run_options.extra_analyze_args = analyze_flags
         self._settings.analyze_extra_args = analyze_flags
+        elaborate_flags = self._elaborate_flags_edit.text().split()
+        self._run_options.extra_elaborate_args = elaborate_flags
+        self._settings.elaborate_extra_args = elaborate_flags

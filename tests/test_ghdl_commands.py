@@ -1,5 +1,6 @@
 from ghdl_gui.ghdl_commands import (
     DEFAULT_ANALYZE_EXTRA_ARGS,
+    DEFAULT_ELABORATE_EXTRA_ARGS,
     RunOptions,
     build_analyze_args,
     build_elaborate_args,
@@ -63,6 +64,11 @@ def test_run_options_default_analyze_args_include_gcc_backend_flags():
     assert options.extra_analyze_args == list(DEFAULT_ANALYZE_EXTRA_ARGS)
 
 
+def test_run_options_default_elaborate_args_include_gcc_backend_flags():
+    options = RunOptions()
+    assert options.extra_elaborate_args == list(DEFAULT_ELABORATE_EXTRA_ARGS)
+
+
 def test_build_analyze_args_with_default_gcc_backend_flags():
     args = build_analyze_args(
         ["counter.vhd"], extra_args=list(DEFAULT_ANALYZE_EXTRA_ARGS)
@@ -75,4 +81,18 @@ def test_build_analyze_args_with_default_gcc_backend_flags():
         "-fsynopsys",
         "-fPIE",
         "counter.vhd",
+    ]
+
+
+def test_build_elaborate_args_with_default_gcc_backend_flags():
+    args = build_elaborate_args(
+        "counter_tb", extra_args=list(DEFAULT_ELABORATE_EXTRA_ARGS)
+    )
+    assert args == [
+        "-e",
+        "--std=08",
+        "-Wl,-lgcov",
+        "-fsynopsys",
+        "-fPIE",
+        "counter_tb",
     ]
