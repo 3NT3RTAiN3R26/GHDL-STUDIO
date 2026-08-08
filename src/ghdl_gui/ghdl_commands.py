@@ -15,6 +15,17 @@ from pathlib import Path
 VHDL_STANDARDS = ("87", "93", "93c", "00", "02", "08")
 DEFAULT_STD = "08"
 
+# Werden standardmaessig bei jedem "ghdl -a" mitgegeben. Sinnvoll z. B. fuer
+# GHDL-Builds mit dem GCC-Backend, bei denen Coverage-Instrumentierung
+# (gcov) und PIE-Kompatibilitaet gewuenscht sind. Ueber den
+# Einstellungsdialog vom Nutzer anpassbar.
+DEFAULT_ANALYZE_EXTRA_ARGS = (
+    "-Wc,-fprofile-arcs",
+    "-Wc,-ftest-coverage",
+    "-fsynopsys",
+    "-fPIE",
+)
+
 
 def find_ghdl_executable() -> str | None:
     """Sucht die ghdl-Executable im PATH und gibt den vollen Pfad zurueck."""
@@ -121,7 +132,7 @@ class RunOptions:
     work_dir: str | None = None
     stop_time: str | None = None
     generics: dict[str, str] = field(default_factory=dict)
-    extra_analyze_args: list[str] = field(default_factory=list)
+    extra_analyze_args: list[str] = field(default_factory=lambda: list(DEFAULT_ANALYZE_EXTRA_ARGS))
     extra_elaborate_args: list[str] = field(default_factory=list)
     extra_run_args: list[str] = field(default_factory=list)
 

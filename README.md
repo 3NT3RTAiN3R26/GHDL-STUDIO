@@ -18,6 +18,9 @@ läuft die GUI unverändert unter Linux, Windows und macOS.
   Signale sowie Bus-Werte (als Hex) darstellt, inkl. Zoom und Ein-/Ausblenden von Signalen
 - Einstellungsdialog für GHDL-Pfad (automatische Erkennung über `PATH` oder manuelle Auswahl),
   VHDL-Standard (87/93/00/02/08), Top-Level-Entity und Stop-Zeit
+- Konfigurierbare zusätzliche `ghdl -a`-Flags (z. B. `-Wc,-fprofile-arcs -Wc,-ftest-coverage
+  -fsynopsys -fPIE` für GHDL-Builds mit GCC-Backend), standardmäßig vorbelegt und über den
+  Einstellungsdialog anpassbar bzw. per Klick auf "Standard" zurücksetzbar
 - Einstellungen werden plattformübergreifend über `QSettings` persistiert
 
 ## Projektstruktur

@@ -38,7 +38,10 @@ class MainWindow(QMainWindow):
         self.resize(1100, 750)
 
         self._settings = AppSettings()
-        self._run_options = RunOptions(std=self._settings.vhdl_std)
+        self._run_options = RunOptions(
+            std=self._settings.vhdl_std,
+            extra_analyze_args=self._settings.analyze_extra_args,
+        )
         self._runner = GhdlRunner(self)
         self._runner.started.connect(self._on_command_started)
         self._runner.output_received.connect(self._on_output)

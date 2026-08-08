@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QSettings
 
-from ghdl_gui.ghdl_commands import DEFAULT_STD, find_ghdl_executable
+from ghdl_gui.ghdl_commands import DEFAULT_ANALYZE_EXTRA_ARGS, DEFAULT_STD, find_ghdl_executable
 
 ORG_NAME = "GhdlGui"
 APP_NAME = "GhdlGui"
@@ -37,6 +37,17 @@ class AppSettings:
     @vhdl_std.setter
     def vhdl_std(self, value: str) -> None:
         self._settings.setValue("vhdl_std", value)
+
+    @property
+    def analyze_extra_args(self) -> list[str]:
+        if not self._settings.contains("analyze_extra_args"):
+            return list(DEFAULT_ANALYZE_EXTRA_ARGS)
+        stored = self._settings.value("analyze_extra_args", "", str)
+        return stored.split()
+
+    @analyze_extra_args.setter
+    def analyze_extra_args(self, value: list[str]) -> None:
+        self._settings.setValue("analyze_extra_args", " ".join(value))
 
     @property
     def last_project_dir(self) -> str:

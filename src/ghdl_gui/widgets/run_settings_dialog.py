@@ -17,8 +17,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ghdl_gui.ghdl_commands import VHDL_STANDARDS, find_ghdl_executable, get_ghdl_version
-from ghdl_gui.ghdl_commands import RunOptions
+from ghdl_gui.ghdl_commands import (
+    DEFAULT_ANALYZE_EXTRA_ARGS,
+    VHDL_STANDARDS,
+    RunOptions,
+    find_ghdl_executable,
+    get_ghdl_version,
+)
 from ghdl_gui.settings import AppSettings
 
 
@@ -50,12 +55,25 @@ class RunSettingsDialog(QDialog):
         self._stop_time_edit = QLineEdit(run_options.stop_time or "", self)
         self._stop_time_edit.setPlaceholderText("z. B. 100ns (optional)")
 
+        self._analyze_flags_edit = QLineEdit(" ".join(run_options.extra_analyze_args), self)
+        self._analyze_flags_edit.setPlaceholderText("zusaetzliche Flags fuer ghdl -a, per Leerzeichen getrennt")
+        reset_analyze_flags_button = QPushButton("Standard", self)
+        reset_analyze_flags_button.setToolTip(
+            "Setzt die Analyze-Flags auf die Standardwerte zurueck "
+            "(z. B. sinnvoll fuer GHDL-Builds mit GCC-Backend / Coverage)."
+        )
+        reset_analyze_flags_button.clicked.connect(self._on_reset_analyze_flags)
+        analyze_flags_row = QHBoxLayout()
+        analyze_flags_row.addWidget(self._analyze_flags_edit)
+        analyze_flags_row.addWidget(reset_analyze_flags_button)
+
         form = QFormLayout()
         form.addRow("GHDL-Executable:", ghdl_path_row)
         form.addRow("", check_button)
         form.addRow("VHDL-Standard:", self._std_combo)
         form.addRow("Top-Level-Entity:", self._top_unit_edit)
         form.addRow("Stop-Zeit:", self._stop_time_edit)
+        form.addRow("Analyze-Flags (ghdl -a):", analyze_flags_row)
 
         self._version_label = QLabel("", self)
 
@@ -96,9 +114,15 @@ class RunSettingsDialog(QDialog):
             return
         self._version_label.setText(f"Gefunden: {info.raw}")
 
+    def _on_reset_analyze_flags(self) -> None:
+        self._analyze_flags_edit.setText(" ".join(DEFAULT_ANALYZE_EXTRA_ARGS))
+
     def apply(self) -> None:
         self._settings.ghdl_executable = self._ghdl_path_edit.text().strip()
         self._settings.vhdl_std = self._std_combo.currentText()
         self._run_options.std = self._std_combo.currentText()
         self._run_options.top_unit = self._top_unit_edit.text().strip()
         self._run_options.stop_time = self._stop_time_edit.text().strip() or None
+        analyze_flags = self._analyze_flags_edit.text().split()
+        self._run_options.extra_analyze_args = analyze_flags
+        self._settings.analyze_extra_args = analyze_flags

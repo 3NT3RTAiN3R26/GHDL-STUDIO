@@ -1,4 +1,6 @@
 from ghdl_gui.ghdl_commands import (
+    DEFAULT_ANALYZE_EXTRA_ARGS,
+    RunOptions,
     build_analyze_args,
     build_elaborate_args,
     build_run_args,
@@ -54,3 +56,23 @@ def test_parse_ghdl_version_typical_output():
     output = "GHDL 4.1.0 (2.0.0.r0.g...) [Dunoon edition]\n Compiled with GNAT Version: 12.2.0\n"
     info = parse_ghdl_version(output)
     assert info.version == "4.1.0"
+
+
+def test_run_options_default_analyze_args_include_gcc_backend_flags():
+    options = RunOptions()
+    assert options.extra_analyze_args == list(DEFAULT_ANALYZE_EXTRA_ARGS)
+
+
+def test_build_analyze_args_with_default_gcc_backend_flags():
+    args = build_analyze_args(
+        ["counter.vhd"], extra_args=list(DEFAULT_ANALYZE_EXTRA_ARGS)
+    )
+    assert args == [
+        "-a",
+        "--std=08",
+        "-Wc,-fprofile-arcs",
+        "-Wc,-ftest-coverage",
+        "-fsynopsys",
+        "-fPIE",
+        "counter.vhd",
+    ]
