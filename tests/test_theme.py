@@ -24,6 +24,8 @@ def test_dark_stylesheet_mentions_core_widgets():
     assert "QToolBar" in sheet
     assert "QTabBar::tab" in sheet
     assert "#1e1e1e" in sheet
+    assert "QComboBox::down-arrow" in sheet
+    assert "QComboBox::drop-down" in sheet
 
 
 def test_apply_dark_theme_sets_fusion_and_stylesheet(qapp):

@@ -173,7 +173,7 @@ def dark_stylesheet() -> str:
         color: {_FG_DISABLED};
         background-color: {_BG_ALT};
     }}
-    QLineEdit, QComboBox, QSpinBox, QPlainTextEdit, QTextEdit, QListWidget, QTreeWidget, QTableWidget {{
+    QLineEdit, QSpinBox, QPlainTextEdit, QTextEdit, QListWidget, QTreeWidget, QTableWidget {{
         background-color: {_BG_INPUT};
         color: {_FG};
         border: 1px solid {_BORDER};
@@ -182,9 +182,37 @@ def dark_stylesheet() -> str:
         selection-color: {_HIGHLIGHT_TEXT};
         padding: 2px 4px;
     }}
+    QComboBox {{
+        background-color: {_BG_INPUT};
+        color: {_FG};
+        border: 1px solid {_BORDER};
+        border-radius: 2px;
+        selection-background-color: {_ACCENT};
+        selection-color: {_HIGHLIGHT_TEXT};
+        padding: 2px 28px 2px 6px;
+        min-height: 1.35em;
+    }}
+    QComboBox:hover {{
+        border-color: {_ACCENT_HOVER};
+    }}
     QComboBox::drop-down {{
+        subcontrol-origin: padding;
+        subcontrol-position: center right;
+        width: 22px;
         border: none;
-        width: 18px;
+        border-left: 1px solid {_BORDER};
+        background-color: {_BG_BUTTON};
+        border-top-right-radius: 2px;
+        border-bottom-right-radius: 2px;
+    }}
+    QComboBox::drop-down:hover {{
+        background-color: {_BG_BUTTON_HOVER};
+    }}
+    QComboBox::down-arrow {{
+        width: 10px;
+        height: 7px;
+        /* Heller Chevron, damit die Combobox im dunklen Theme als Dropdown erkennbar ist */
+        image: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMiIgaGVpZ2h0PSI4IiB2aWV3Qm94PSIwIDAgMTIgOCI+PHBhdGggZmlsbD0iI2Q0ZDRkNCIgZD0iTTEgMS41bDUgNSA1LTV6Ii8+PC9zdmc+);
     }}
     QComboBox QAbstractItemView {{
         background-color: {_BG_ALT};
