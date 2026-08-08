@@ -33,7 +33,9 @@ läuft GHDL Studio unverändert unter Linux, Windows und macOS.
   installiert, wird es nach jedem Simulationslauf automatisch gestartet und dessen komplettes
   Fenster (Signalbaum, Wellenformanzeige, Werkzeugleiste) nativ in die GUI eingebettet — kein
   separates Fenster, keine Funktionseinschränkung gegenüber "echtem" GTKWave. Die Einbettung
-  funktioniert unter **Linux/X11** (via `python-xlib`) und **Windows** (via WinAPI); auf anderen
+  funktioniert unter **Linux/X11** (via `python-xlib`, inkl. vollständiger Fensterbaum-Suche
+  als Fallback wenn `_NET_CLIENT_LIST` unvollständig ist — relevant z. B. unter WSLg) und
+  **Windows** (via WinAPI-`SetParent`, nicht nur `QWindow.fromWinId`); auf anderen
   Plattformen bzw. falls GTKWave nicht gefunden/deaktiviert wird, greift automatisch ein
   **eingebauter Wellenform-Viewer** als Fallback (kein Funktionsverlust, nur weniger Komfort):
   eigener VCD-Parser mit digitalen Signalen, Bus-Werten (als Hex), Zeitlineal mit
@@ -98,10 +100,17 @@ betroffen), wird aber nicht in den Tab "Wellenformen" eingebettet. Mögliche Urs
    erneut ausführen. Die Statusmeldung im Wellenformen-Tab zeigt an, ob `python-xlib`
    erkannt wurde.
 2. **Langsamer Fenstermanager/Compositor** (z. B. unter WSLg): GTKWave braucht manchmal
-   länger als der Timeout, bis sein Fenster vollständig registriert ist. Klicke in diesem
+   länger als der Timeout, bis sein Fenster vollständig registriert ist. Die Fenstersuche
+   prüft zusätzlich zum schnellen EWMH-Pfad (`_NET_CLIENT_LIST`) den kompletten
+   X11-Fensterbaum — trotzdem kann unter WSLg ein Retry nötig sein. Klicke in diesem
    Fall einfach auf den Button "GTKWave erneut versuchen", der nach einem Fehlschlag im
    Wellenformen-Tab erscheint.
-3. Nach einer Korrektur (z. B. `python-xlib` nachinstalliert) muss GHDL Studio **nicht**
+3. **Windows: Tab leer, GTKWave bleibt extern sichtbar.** Frühere Versionen meldeten
+   manchmal fälschlich eine erfolgreiche Einbettung, obwohl das Fenster weiterhin
+   eigenständig blieb (`QWindow.fromWinId` reicht bei Fremdfenstern oft nicht). Ab
+   dieser Version wird unter Windows per `SetParent` eingebettet. Bitte den aktuellen
+   Stand des Branches ziehen und erneut testen.
+4. Nach einer Korrektur (z. B. `python-xlib` nachinstalliert) muss GHDL Studio **nicht**
    neu gestartet werden — der "Erneut versuchen"-Button startet GTKWave einfach erneut.
 
 ## Installation

@@ -16,6 +16,13 @@ from ghdl_studio.gtkwave_embed import (  # noqa: E402
     is_xlib_available,
 )
 
+_HAS_LIVE_X11 = (
+    sys.platform.startswith("linux")
+    and bool(os.environ.get("DISPLAY"))
+    and is_xlib_available()
+    and find_gtkwave_executable() is not None
+)
+
 
 @pytest.fixture(scope="module")
 def qapp():
@@ -78,3 +85,42 @@ def test_collect_descendant_pids_finds_child_process():
     finally:
         child.kill()
         child.wait()
+
+
+@pytest.mark.skipif(
+    not _HAS_LIVE_X11, reason="benoetigt einen laufenden X-Server, python-xlib und gtkwave im PATH"
+)
+def test_x11_full_window_tree_fallback_finds_gtkwave_window(tmp_path):
+    """Verifiziert, dass die vollstaendige Fensterbaum-Suche (der Fallback
+    fuer Compositor/Fenstermanager, die _NET_CLIENT_LIST nicht pflegen,
+    z. B. WSLg) das GTKWave-Fenster tatsaechlich unabhaengig vom
+    schnellen EWMH-Pfad findet."""
+    from Xlib import display
+
+    from ghdl_studio.gtkwave_embed import _iter_x11_window_tree, _scan_x11_windows
+
+    vcd_path = tmp_path / "empty.vcd"
+    vcd_path.write_text(
+        "$timescale 1 ns $end\n$scope module top $end\n$upscope $end\n"
+        "$enddefinitions $end\n#0\n",
+        encoding="utf-8",
+    )
+
+    proc = subprocess.Popen([find_gtkwave_executable(), str(vcd_path)])
+    try:
+        deadline = time.monotonic() + 15
+        candidate_pids = _collect_descendant_pids(proc.pid)
+        conn = display.Display()
+        root = conn.screen().root
+        net_wm_pid = conn.intern_atom("_NET_WM_PID")
+
+        found = None
+        while time.monotonic() < deadline and found is None:
+            found, _ = _scan_x11_windows(_iter_x11_window_tree(root), net_wm_pid, candidate_pids)
+            if found is None:
+                time.sleep(0.3)
+        conn.close()
+        assert found is not None, "Fensterbaum-Fallback haette das GTKWave-Fenster finden muessen."
+    finally:
+        proc.kill()
+        proc.wait()
