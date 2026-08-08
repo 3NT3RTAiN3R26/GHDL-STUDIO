@@ -12,6 +12,7 @@ from ghdl_studio.gtkwave_embed import (  # noqa: E402
     GtkWaveEmbedder,
     _collect_descendant_pids,
     _to_win32_long,
+    ensure_linux_xcb_platform,
     find_gtkwave_executable,
     is_embedding_supported,
     is_xlib_available,
@@ -72,6 +73,24 @@ def test_collect_descendant_pids_includes_root_pid():
     assert os.getpid() in pids
 
 
+def test_ensure_linux_xcb_platform_sets_xcb_when_display_present(monkeypatch):
+    if not sys.platform.startswith("linux"):
+        monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.delenv("QT_QPA_PLATFORM", raising=False)
+    monkeypatch.setenv("DISPLAY", ":99")
+    ensure_linux_xcb_platform()
+    assert os.environ.get("QT_QPA_PLATFORM") == "xcb"
+
+
+def test_ensure_linux_xcb_platform_respects_existing_override(monkeypatch):
+    if not sys.platform.startswith("linux"):
+        monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "wayland")
+    monkeypatch.setenv("DISPLAY", ":0")
+    ensure_linux_xcb_platform()
+    assert os.environ.get("QT_QPA_PLATFORM") == "wayland"
+
+
 def test_to_win32_long_maps_unsigned_styles_into_signed_32bit_range():
     """Reproduziert den Windows-OverflowError bei SetWindowLongW-Arg 3:
     Python-Ints aus Stil-Bitops muessen in signed 32-bit passen."""
@@ -118,28 +137,38 @@ def test_x11_full_window_tree_fallback_finds_gtkwave_window(tmp_path):
 
     from ghdl_studio.gtkwave_embed import _iter_x11_window_tree, _scan_x11_windows
 
-    vcd_path = tmp_path / "empty.vcd"
+    vcd_path = tmp_path / "minimal.vcd"
+    # Mindestens ein Signal noetig - sonst beendet GTKWave sofort mit
+    # "No symbols in VCD file..nothing to do!" und oeffnet kein Fenster.
     vcd_path.write_text(
-        "$timescale 1 ns $end\n$scope module top $end\n$upscope $end\n"
-        "$enddefinitions $end\n#0\n",
+        "$timescale 1 ns $end\n"
+        "$scope module top $end\n"
+        "$var wire 1 ! clk $end\n"
+        "$upscope $end\n"
+        "$enddefinitions $end\n"
+        "#0\n$dumpvars\n1!\n$end\n"
+        "#10\n0!\n#20\n1!\n",
         encoding="utf-8",
     )
 
     proc = subprocess.Popen([find_gtkwave_executable(), str(vcd_path)])
     try:
         deadline = time.monotonic() + 15
-        candidate_pids = _collect_descendant_pids(proc.pid)
         conn = display.Display()
         root = conn.screen().root
         net_wm_pid = conn.intern_atom("_NET_WM_PID")
 
         found = None
         while time.monotonic() < deadline and found is None:
+            if proc.poll() is not None:
+                break
+            candidate_pids = _collect_descendant_pids(proc.pid)
             found, _ = _scan_x11_windows(_iter_x11_window_tree(root), net_wm_pid, candidate_pids)
             if found is None:
                 time.sleep(0.3)
         conn.close()
         assert found is not None, "Fensterbaum-Fallback haette das GTKWave-Fenster finden muessen."
     finally:
-        proc.kill()
-        proc.wait()
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()

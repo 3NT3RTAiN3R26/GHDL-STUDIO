@@ -4,35 +4,23 @@ GTKWave bietet keine offizielle Embedding-API. Dieses Modul realisiert die
 Einbettung ueber plattformspezifisches "Window Reparenting":
 
 - **Linux/X11**: GTKWave wird als Subprozess gestartet, anschliessend wird
-  dessen Top-Level-Fenster gefunden (benoetigt das optionale Paket
-  ``python-xlib``) und per ``QWindow.fromWinId()`` /
-  ``QWidget.createWindowContainer()`` in die GUI eingebettet. Die Suche
-  versucht zuerst einen exakten Treffer ueber ``_NET_WM_PID`` gegen die
-  PID des gestarteten Prozesses *oder* eine seiner (rekursiven)
-  Kindprozess-PIDs; schlaegt der schnelle Pfad ueber die EWMH-Property
-  ``_NET_CLIENT_LIST`` fehl (z. B. weil der Compositor unter WSLg diese
-  nicht zuverlaessig pflegt), wird zusaetzlich der komplette
-  X11-Fensterbaum ab dem Root-Fenster durchsucht. Als letzter Fallback
-  wird nach ``WM_CLASS`` gesucht.
-- **Windows**: Das Zielfenster wird per WinAPI (``EnumWindows`` /
-  ``GetWindowThreadProcessId``) gefunden. Anders als unter X11 reicht
-  ``QWindow.fromWinId()``/``createWindowContainer()`` bei echten,
-  fremdprozess-eigenen Fenstern (wie GTKWave) unter Windows haeufig NICHT
-  aus, um eine sichtbare Einbettung zu erzielen (das Fenster bleibt als
-  eigenstaendiges Top-Level-Fenster sichtbar, obwohl kein Fehler
-  gemeldet wird). Stattdessen wird das Fenster direkt per WinAPI
-  (``SetParent`` + Fensterstil-Anpassung) in ein natives Qt-Widget
-  eingebettet und dessen Groesse per Event-Filter mit dem Container
-  synchron gehalten.
-- **macOS und alle anderen Faelle**: natives Window-Reparenting wird nicht
-  unterstuetzt; GTKWave laeuft dann als eigenstaendiges Fenster weiter.
+  dessen Top-Level-Fenster gefunden (benoetigt ``python-xlib``) und per
+  X11-``XReparentWindow`` in ein natives Qt-Container-Widget gehaengt
+  (analog zu ``SetParent`` unter Windows). Die Fenstersuche versucht
+  zuerst ``_NET_CLIENT_LIST`` (PID / Kind-PIDs), dann den kompletten
+  X11-Fensterbaum, zuletzt ``WM_CLASS``.
+  ``QWindow.fromWinId()`` wird bewusst *nicht* verwendet: Unter WSL/WSLg
+  und generell mit dem Qt-Wayland-Plugin schlaegt das mit
+  ``platform plugin does not support foreign windows`` fehl. Deshalb
+  startet die Anwendung unter Linux mit X11/XWayland bevorzugt das
+  ``xcb``-Plugin (siehe ``ensure_linux_xcb_platform``).
+- **Windows**: Fenstersuche per WinAPI; Einbettung per ``SetParent`` +
+  Stil-/Groessen-Sync (nicht ``QWindow.fromWinId``).
+- **macOS und alle anderen Faelle**: kein natives Reparenting; GTKWave
+  laeuft als eigenstaendiges Fenster weiter.
 
-Schlaegt die Einbettung fehl (GTKWave nicht installiert, Timeout beim
-Suchen des Fensters, nicht unterstuetzte Plattform, fehlendes
-``python-xlib`` unter Linux), wird dies ueber das ``failed``-Signal mit
-einer moeglichst konkreten Begruendung kommuniziert, sodass die
-aufrufende GUI auf einen alternativen Wellenform-Viewer zurueckfallen
-und dem Nutzer einen erneuten Versuch anbieten kann.
+Schlaegt die Einbettung fehl, signalisiert ``failed`` eine konkrete
+Begruendung; die GUI faellt auf den internen Wellenform-Viewer zurueck.
 """
 
 from __future__ import annotations
@@ -42,7 +30,6 @@ import shutil
 import sys
 
 from PySide6.QtCore import QEvent, QObject, QProcess, Qt, QTimer, Signal
-from PySide6.QtGui import QWindow
 from PySide6.QtWidgets import QWidget
 
 _POLL_INTERVAL_MS = 300
@@ -66,6 +53,37 @@ def is_xlib_available() -> bool:
     import importlib.util
 
     return importlib.util.find_spec("Xlib") is not None
+
+
+def ensure_linux_xcb_platform() -> None:
+    """Bevorzugt das Qt-``xcb``-Plugin unter Linux, sofern der Nutzer nichts
+    anderes gesetzt hat und ein X11-/XWayland-``DISPLAY`` vorhanden ist.
+
+    Muss *vor* der Erzeugung von ``QApplication`` aufgerufen werden. Ohne
+    XCB (typisch: Qt waehlt unter WSLg/Wayland-Sessions ``wayland``) ist
+    weder ``QWindow.fromWinId`` noch X11-Reparenting in ein Qt-Widget
+    moeglich — sichtbar als
+    ``QWindow::fromWinId(): platform plugin does not support foreign windows``.
+    """
+    if not sys.platform.startswith("linux"):
+        return
+    if os.environ.get("QT_QPA_PLATFORM"):
+        return
+    if os.environ.get("DISPLAY"):
+        os.environ["QT_QPA_PLATFORM"] = "xcb"
+
+
+def qt_platform_name() -> str:
+    """Aktueller Qt-Platform-Plugin-Name (``xcb``, ``wayland``, …), oder leer."""
+    try:
+        from PySide6.QtGui import QGuiApplication
+
+        app = QGuiApplication.instance()
+        if app is None:
+            return ""
+        return str(app.platformName())
+    except Exception:  # noqa: BLE001
+        return ""
 
 
 def _collect_descendant_pids(root_pid: int) -> set[int]:
@@ -222,6 +240,101 @@ def _find_window_id_for_pid_x11(pid: int):
             conn.close()
         except Exception:  # noqa: BLE001
             pass
+
+
+class _X11ChildResizeSync(QObject):
+    """Haelt die Groesse eines per ``XReparentWindow`` eingebetteten
+    X11-Kindfensters synchron mit dem Qt-Container."""
+
+    def __init__(self, xid: int, container: QWidget) -> None:
+        super().__init__(container)
+        self._xid = xid
+        self._container = container
+        from Xlib import display  # noqa: PLC0415 - optionale Abhaengigkeit
+
+        self._display = display.Display()
+        self._child = self._display.create_resource_object("window", xid)
+
+    def eventFilter(self, watched, event) -> bool:  # noqa: N802 (Qt override)
+        if watched is self._container and event.type() in (QEvent.Type.Resize, QEvent.Type.Show):
+            self._resize_child()
+        return False
+
+    def _resize_child(self) -> None:
+        try:
+            width = max(self._container.width(), 1)
+            height = max(self._container.height(), 1)
+            self._child.configure(width=width, height=height)
+            self._display.sync()
+        except Exception:  # noqa: BLE001 - Resize-Fehler nicht eskalieren
+            pass
+
+    def close_display(self) -> None:
+        try:
+            self._display.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _embed_foreign_window_x11(xid: int, container: QWidget) -> None:
+    """Bettet das X11-Fenster ``xid`` per ``XReparentWindow`` in ``container`` ein.
+
+    Im Gegensatz zu ``QWindow.fromWinId()``/``createWindowContainer()``
+    funktioniert dieser Weg auch dann, wenn das Qt-Platform-Plugin keine
+    "foreign windows" unterstuetzt — solange Qt selbst ueber XCB laeuft und
+    ``container.winId()`` eine echte X11-Window-ID liefert (WSLg via XWayland).
+    """
+    from Xlib import X, display  # noqa: PLC0415
+    from Xlib.error import XError
+
+    platform = qt_platform_name()
+    if platform and platform != "xcb":
+        raise OSError(
+            f"Qt laeuft mit dem Platform-Plugin '{platform}', nicht 'xcb'. "
+            "X11-Einbettung von GTKWave erfordert XCB (unter WSL/WSLg: App neu "
+            "starten — GHDL Studio setzt QT_QPA_PLATFORM=xcb automatisch, sofern "
+            "nicht anders gesetzt; alternativ manuell "
+            "'export QT_QPA_PLATFORM=xcb' vor dem Start)."
+        )
+
+    container_xid = int(container.winId())
+    if not container_xid:
+        raise OSError("Qt-Container besitzt keine X11-Window-ID (winId=0).")
+
+    conn = display.Display()
+    try:
+        child = conn.create_resource_object("window", xid)
+        parent = conn.create_resource_object("window", container_xid)
+        try:
+            # Vom Window-Manager loesen, dann als Child in den Qt-Container.
+            child.unmap()
+            conn.sync()
+            child.reparent(parent, 0, 0)
+            child.configure(
+                width=max(container.width(), 1),
+                height=max(container.height(), 1),
+                border_width=0,
+            )
+            child.map()
+            conn.sync()
+            # Sichtbarkeit / Map-State kurz verifizieren
+            attrs = child.get_attributes()
+            if attrs.map_state == X.IsUnmapped:
+                child.map()
+                conn.sync()
+        except XError as exc:
+            raise OSError(f"XReparentWindow fehlgeschlagen: {exc}") from exc
+    finally:
+        try:
+            conn.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+    resizer = _X11ChildResizeSync(xid, container)
+    container.installEventFilter(resizer)
+    container._ghdl_studio_resize_sync = resizer  # type: ignore[attr-defined]
+    # Sofort einmal auf aktuelle Container-Groesse bringen
+    resizer._resize_child()
 
 
 def _to_win32_long(value: int) -> int:
@@ -448,9 +561,13 @@ class GtkWaveEmbedder(QObject):
 
     def stop(self) -> None:
         self._timer.stop()
-        if self._process is not None and self.is_running():
-            self._process.kill()
+        proc = self._process
         self._process = None
+        if proc is not None:
+            if proc.state() != QProcess.ProcessState.NotRunning:
+                proc.kill()
+                proc.waitForFinished(3000)
+            proc.deleteLater()
 
     def start(self, gtkwave_executable: str, vcd_path: str, parent_widget: QWidget) -> None:
         """Startet GTKWave fuer ``vcd_path`` und versucht anschliessend, das
@@ -522,38 +639,39 @@ class GtkWaveEmbedder(QObject):
         return reason
 
     def _finish_embedding(self, win_id: int) -> None:
-        if sys.platform.startswith("win"):
-            # Unter Windows wird zunaechst ein leerer, natives Qt-Widget
-            # als Container erzeugt und in den Parent eingehaengt (damit
-            # Layout/Groesse/winId stimmen). Das eigentliche SetParent()
-            # erfolgt im naechsten Event-Loop-Tick. ``embedded`` wird erst
-            # nach erfolgreichem SetParent gesendet, damit die GUI keinen
-            # falschen Erfolgsstatus zeigt, falls die WinAPI-Einbettung
-            # fehlschlaegt.
+        # Windows und Linux nutzen denselben Ablauf: zuerst einen nativen
+        # Qt-Container ins Layout haengen (winId + Groesse), dann im
+        # naechsten Event-Loop-Tick per OS-API reparenten. ``embedded``
+        # wird erst nach erfolgreichem Reparent gesendet.
+        if sys.platform.startswith("win") or sys.platform.startswith("linux"):
             container = QWidget(self._parent_widget)
             container.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
             parent = self._parent_widget
             if parent is not None and parent.layout() is not None:
                 parent.layout().addWidget(container)
             container.show()
-            QTimer.singleShot(0, lambda: self._finish_embedding_windows(win_id, container))
+            if sys.platform.startswith("win"):
+                QTimer.singleShot(0, lambda: self._complete_os_embed(win_id, container, "windows"))
+            else:
+                QTimer.singleShot(0, lambda: self._complete_os_embed(win_id, container, "x11"))
             return
 
-        foreign_window = QWindow.fromWinId(win_id)
-        if foreign_window is None:
-            self.failed.emit("GTKWave-Fenster konnte nicht als Qt-Fenster referenziert werden.")
-            return
-        container = QWidget.createWindowContainer(foreign_window, self._parent_widget)
-        self.embedded.emit(container)
+        self.failed.emit("Fenster-Einbettung wird auf dieser Plattform nicht unterstuetzt.")
 
-    def _finish_embedding_windows(self, hwnd: int, container: QWidget) -> None:
+    def _complete_os_embed(self, win_id: int, container: QWidget, backend: str) -> None:
         try:
-            _embed_foreign_window_windows(hwnd, container)
+            if backend == "windows":
+                _embed_foreign_window_windows(win_id, container)
+            else:
+                _embed_foreign_window_x11(win_id, container)
         except Exception as exc:  # noqa: BLE001 - dem Nutzer die Ursache anzeigen
             parent = container.parentWidget()
             if parent is not None and parent.layout() is not None:
                 parent.layout().removeWidget(container)
             container.hide()
+            resizer = getattr(container, "_ghdl_studio_resize_sync", None)
+            if resizer is not None and hasattr(resizer, "close_display"):
+                resizer.close_display()
             container.deleteLater()
             self.failed.emit(f"GTKWave-Fenster konnte nicht eingebettet werden: {exc}")
             return

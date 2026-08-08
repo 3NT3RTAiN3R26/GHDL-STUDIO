@@ -6,11 +6,16 @@ import sys
 
 from PySide6.QtWidgets import QApplication
 
+from ghdl_studio.gtkwave_embed import ensure_linux_xcb_platform
 from ghdl_studio.main_window import MainWindow
 from ghdl_studio.theme import apply_dark_theme
 
 
 def main() -> int:
+    # Vor QApplication: unter Linux/WSL XCB erzwingen, damit GTKWave per
+    # X11-Reparenting eingebettet werden kann (Wayland unterstuetzt keine
+    # Foreign Windows).
+    ensure_linux_xcb_platform()
     app = QApplication(sys.argv)
     app.setApplicationName("GHDL Studio")
     apply_dark_theme(app)

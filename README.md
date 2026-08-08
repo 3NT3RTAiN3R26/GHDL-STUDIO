@@ -36,9 +36,10 @@ Die Oberfläche nutzt auf **allen Betriebssystemen** ein einheitliches dunkles T
   installiert, wird es nach jedem Simulationslauf automatisch gestartet und dessen komplettes
   Fenster (Signalbaum, Wellenformanzeige, Werkzeugleiste) nativ in die GUI eingebettet — kein
   separates Fenster, keine Funktionseinschränkung gegenüber "echtem" GTKWave. Die Einbettung
-  funktioniert unter **Linux/X11** (via `python-xlib`, inkl. vollständiger Fensterbaum-Suche
-  als Fallback wenn `_NET_CLIENT_LIST` unvollständig ist — relevant z. B. unter WSLg) und
-  **Windows** (via WinAPI-`SetParent`, nicht nur `QWindow.fromWinId`); auf anderen
+  funktioniert unter **Linux/X11** (via `python-xlib` + `XReparentWindow`, inkl. vollständiger
+  Fensterbaum-Suche wenn `_NET_CLIENT_LIST` unvollständig ist — relevant z. B. unter WSLg;
+  die App startet unter Linux bevorzugt mit dem Qt-Plugin `xcb`, damit Einbettung unter
+  Wayland/WSLg funktioniert) und **Windows** (via WinAPI-`SetParent`); auf anderen
   Plattformen bzw. falls GTKWave nicht gefunden/deaktiviert wird, greift automatisch ein
   **eingebauter Wellenform-Viewer** als Fallback (kein Funktionsverlust, nur weniger Komfort):
   eigener VCD-Parser mit digitalen Signalen, Bus-Werten (als Hex), Zeitlineal mit
@@ -109,6 +110,12 @@ betroffen), wird aber nicht in den Tab "Wellenformen" eingebettet. Mögliche Urs
    X11-Fensterbaum — trotzdem kann unter WSLg ein Retry nötig sein. Klicke in diesem
    Fall einfach auf den Button "GTKWave erneut versuchen", der nach einem Fehlschlag im
    Wellenformen-Tab erscheint.
+2b. **`platform plugin does not support foreign windows` (WSL/Ubuntu/Wayland):** Qt lief
+   mit dem Wayland-Plugin. GHDL Studio setzt beim Start automatisch
+   `QT_QPA_PLATFORM=xcb` (wenn `DISPLAY` gesetzt und die Variable noch nicht belegt ist)
+   und bettet per X11-`XReparentWindow` ein — nicht mehr über `QWindow.fromWinId`.
+   App komplett neu starten. Falls du `QT_QPA_PLATFORM=wayland` gesetzt hast, für die
+   Einbettung vorübergehend `export QT_QPA_PLATFORM=xcb` verwenden.
 3. **Windows: Tab leer, GTKWave bleibt extern sichtbar / `OverflowError: int too long to convert`.**
    Frühere Versionen meldeten manchmal fälschlich eine erfolgreiche Einbettung, obwohl
    das Fenster weiterhin eigenständig blieb (`QWindow.fromWinId` reicht bei Fremdfenstern
