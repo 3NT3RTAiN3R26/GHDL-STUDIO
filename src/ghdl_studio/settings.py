@@ -100,6 +100,22 @@ class AppSettings:
         self._set("output_dir", value)
 
     @property
+    def osvvm_lib_path(self) -> str:
+        return self._settings.value("osvvm_lib_path", "", str) or ""
+
+    @osvvm_lib_path.setter
+    def osvvm_lib_path(self, value: str) -> None:
+        self._set("osvvm_lib_path", value)
+
+    @property
+    def custom_lib_path(self) -> str:
+        return self._settings.value("custom_lib_path", "", str) or ""
+
+    @custom_lib_path.setter
+    def custom_lib_path(self, value: str) -> None:
+        self._set("custom_lib_path", value)
+
+    @property
     def surfer_executable(self) -> str:
         stored = self._settings.value("surfer_executable", "", str)
         if stored:

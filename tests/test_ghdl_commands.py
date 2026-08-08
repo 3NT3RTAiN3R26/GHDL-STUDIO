@@ -6,6 +6,7 @@ from ghdl_studio.ghdl_commands import (
     RunOptions,
     build_analyze_args,
     build_elaborate_args,
+    build_library_search_args,
     build_run_args,
     clean_output_dir,
     parse_ghdl_version,
@@ -22,6 +23,42 @@ def test_build_analyze_args_with_workdir_and_extra():
         ["a.vhd"], std="93", work_dir="build", extra_args=["-fsynopsys"]
     )
     assert args == ["-a", "--std=93", "--workdir=build", "-fsynopsys", "a.vhd"]
+
+
+def test_build_library_search_args_skips_empty():
+    assert build_library_search_args("", "  ") == []
+    assert build_library_search_args("/libs/osvvm", "", "/libs/custom") == [
+        "-P/libs/osvvm",
+        "-P/libs/custom",
+    ]
+
+
+def test_build_analyze_args_with_library_paths():
+    args = build_analyze_args(
+        ["a.vhd"],
+        library_paths=["/opt/osvvm", "/home/me/libs"],
+        extra_args=["-fsynopsys"],
+    )
+    assert args == [
+        "-a",
+        "--std=08",
+        "-P/opt/osvvm",
+        "-P/home/me/libs",
+        "-fsynopsys",
+        "a.vhd",
+    ]
+
+
+def test_build_elaborate_and_run_args_with_library_paths():
+    elab = build_elaborate_args("tb", library_paths=["/opt/osvvm"])
+    assert elab == ["-e", "--std=08", "-P/opt/osvvm", "tb"]
+    run = build_run_args("tb", library_paths=["/opt/osvvm"], vcd_path="tb.vcd")
+    assert run == ["-r", "--std=08", "-P/opt/osvvm", "tb", "--vcd=tb.vcd"]
+
+
+def test_run_options_library_paths():
+    options = RunOptions(osvvm_lib_path="/osvvm", custom_lib_path="/custom")
+    assert options.library_paths() == ["/osvvm", "/custom"]
 
 
 def test_build_analyze_args_requires_files():

@@ -71,6 +71,30 @@ class RunSettingsDialog(QDialog):
         output_dir_row.addWidget(output_dir_browse_button)
         output_dir_row.addWidget(output_dir_reset_button)
 
+        self._osvvm_lib_edit = QLineEdit(run_options.osvvm_lib_path or settings.osvvm_lib_path, self)
+        self._osvvm_lib_edit.setPlaceholderText("Directory with precompiled OSVVM libraries")
+        self._osvvm_lib_edit.setToolTip(
+            "Path to a directory containing precompiled OSVVM GHDL libraries. "
+            "Passed to Analyze/Elaborate/Run as -P<path>."
+        )
+        osvvm_browse_button = QPushButton("Browse...", self)
+        osvvm_browse_button.clicked.connect(self._on_browse_osvvm_lib)
+        osvvm_lib_row = QHBoxLayout()
+        osvvm_lib_row.addWidget(self._osvvm_lib_edit)
+        osvvm_lib_row.addWidget(osvvm_browse_button)
+
+        self._custom_lib_edit = QLineEdit(run_options.custom_lib_path or settings.custom_lib_path, self)
+        self._custom_lib_edit.setPlaceholderText("Directory with other precompiled GHDL libraries")
+        self._custom_lib_edit.setToolTip(
+            "Path to a directory containing other precompiled GHDL libraries "
+            "(e.g. UVVM or project-local libs). Passed to Analyze/Elaborate/Run as -P<path>."
+        )
+        custom_lib_browse_button = QPushButton("Browse...", self)
+        custom_lib_browse_button.clicked.connect(self._on_browse_custom_lib)
+        custom_lib_row = QHBoxLayout()
+        custom_lib_row.addWidget(self._custom_lib_edit)
+        custom_lib_row.addWidget(custom_lib_browse_button)
+
         self._surfer_path_edit = QLineEdit(settings.surfer_executable, self)
         surfer_browse_button = QPushButton("Browse...", self)
         surfer_browse_button.clicked.connect(self._on_browse_surfer)
@@ -137,6 +161,8 @@ class RunSettingsDialog(QDialog):
         form.addRow("", check_button)
         form.addRow("VHDL standard:", self._std_combo)
         form.addRow("Output directory:", output_dir_row)
+        form.addRow("OSVVM lib path:", osvvm_lib_row)
+        form.addRow("Custom lib path:", custom_lib_row)
         form.addRow("Surfer executable:", surfer_path_row)
         form.addRow("", self._surfer_enabled_check)
         form.addRow("Analyze flags (ghdl -a):", analyze_flags_row)
@@ -177,6 +203,16 @@ class RunSettingsDialog(QDialog):
 
     def _on_reset_output_dir(self) -> None:
         self._output_dir_edit.setText(DEFAULT_OUTPUT_DIR)
+
+    def _on_browse_osvvm_lib(self) -> None:
+        directory = QFileDialog.getExistingDirectory(self, "Select OSVVM library directory")
+        if directory:
+            self._osvvm_lib_edit.setText(directory)
+
+    def _on_browse_custom_lib(self) -> None:
+        directory = QFileDialog.getExistingDirectory(self, "Select custom library directory")
+        if directory:
+            self._custom_lib_edit.setText(directory)
 
     def _on_browse_surfer(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "Select Surfer executable")
@@ -229,6 +265,12 @@ class RunSettingsDialog(QDialog):
         output_dir = self._output_dir_edit.text().strip() or DEFAULT_OUTPUT_DIR
         self._run_options.output_dir = output_dir
         self._settings.output_dir = output_dir
+        osvvm_lib_path = self._osvvm_lib_edit.text().strip()
+        self._run_options.osvvm_lib_path = osvvm_lib_path
+        self._settings.osvvm_lib_path = osvvm_lib_path
+        custom_lib_path = self._custom_lib_edit.text().strip()
+        self._run_options.custom_lib_path = custom_lib_path
+        self._settings.custom_lib_path = custom_lib_path
         analyze_flags = self._analyze_flags_edit.text().split()
         self._run_options.extra_analyze_args = analyze_flags
         self._settings.analyze_extra_args = analyze_flags

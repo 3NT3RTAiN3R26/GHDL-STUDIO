@@ -54,6 +54,8 @@ class MainWindow(QMainWindow):
         self._run_options = RunOptions(
             std=self._settings.vhdl_std,
             output_dir=self._settings.output_dir,
+            osvvm_lib_path=self._settings.osvvm_lib_path,
+            custom_lib_path=self._settings.custom_lib_path,
             extra_analyze_args=self._settings.analyze_extra_args,
             extra_elaborate_args=self._settings.elaborate_extra_args,
             extra_run_args=self._settings.run_extra_args,
@@ -359,7 +361,10 @@ class MainWindow(QMainWindow):
             )
         output_dir = self._ensure_output_dir()
         args = build_analyze_args(
-            vhdl_files, std=self._run_options.std, extra_args=self._run_options.extra_analyze_args
+            vhdl_files,
+            std=self._run_options.std,
+            extra_args=self._run_options.extra_analyze_args,
+            library_paths=self._run_options.library_paths(),
         )
         self._runner.run(executable, args, cwd=output_dir, label="Analyze")
 
@@ -374,7 +379,10 @@ class MainWindow(QMainWindow):
             return
         output_dir = self._ensure_output_dir()
         args = build_elaborate_args(
-            self._run_options.top_unit, std=self._run_options.std, extra_args=self._run_options.extra_elaborate_args
+            self._run_options.top_unit,
+            std=self._run_options.std,
+            extra_args=self._run_options.extra_elaborate_args,
+            library_paths=self._run_options.library_paths(),
         )
         self._runner.run(executable, args, cwd=output_dir, label="Elaborate")
 
@@ -399,6 +407,7 @@ class MainWindow(QMainWindow):
             stop_time=self._run_options.stop_time,
             generics=self._run_options.generics,
             extra_args=self._run_options.extra_run_args,
+            library_paths=self._run_options.library_paths(),
         )
         self._pending_after_run = self._run_options.vcd_path()
         self._runner.run(executable, args, cwd=output_dir, label="Run")

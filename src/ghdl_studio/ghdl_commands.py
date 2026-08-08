@@ -89,11 +89,26 @@ def get_ghdl_version(executable: str, timeout: float = 5.0) -> GhdlVersionInfo:
     return parse_ghdl_version(result.stdout or result.stderr)
 
 
+def build_library_search_args(*lib_paths: str) -> list[str]:
+    """Build GHDL ``-P`` arguments for precompiled library directories.
+
+    Empty or whitespace-only paths are skipped. Each non-empty path becomes
+    ``-P<path>`` so GHDL can find libraries such as OSVVM or a custom lib.
+    """
+    args: list[str] = []
+    for path in lib_paths:
+        normalised = (path or "").strip()
+        if normalised:
+            args.append(f"-P{normalised}")
+    return args
+
+
 def build_analyze_args(
     files: list[str],
     std: str = DEFAULT_STD,
     work_dir: str | None = None,
     extra_args: list[str] | None = None,
+    library_paths: list[str] | None = None,
 ) -> list[str]:
     """Baut die Argumente fuer ``ghdl -a`` (Analyze) auf."""
     if not files:
@@ -101,6 +116,7 @@ def build_analyze_args(
     args = ["-a", f"--std={std}"]
     if work_dir:
         args.append(f"--workdir={work_dir}")
+    args.extend(build_library_search_args(*(library_paths or [])))
     args.extend(extra_args or [])
     args.extend(files)
     return args
@@ -111,6 +127,7 @@ def build_elaborate_args(
     std: str = DEFAULT_STD,
     work_dir: str | None = None,
     extra_args: list[str] | None = None,
+    library_paths: list[str] | None = None,
 ) -> list[str]:
     """Baut die Argumente fuer ``ghdl -e`` (Elaborate) auf."""
     if not unit:
@@ -118,6 +135,7 @@ def build_elaborate_args(
     args = ["-e", f"--std={std}"]
     if work_dir:
         args.append(f"--workdir={work_dir}")
+    args.extend(build_library_search_args(*(library_paths or [])))
     args.extend(extra_args or [])
     args.append(unit)
     return args
@@ -132,6 +150,7 @@ def build_run_args(
     stop_time: str | None = None,
     generics: dict[str, str] | None = None,
     extra_args: list[str] | None = None,
+    library_paths: list[str] | None = None,
 ) -> list[str]:
     """Baut die Argumente fuer ``ghdl -r`` (Run) auf.
 
@@ -147,6 +166,7 @@ def build_run_args(
     args = ["-r", f"--std={std}"]
     if work_dir:
         args.append(f"--workdir={work_dir}")
+    args.extend(build_library_search_args(*(library_paths or [])))
     args.extend(extra_args or [])
     args.append(unit)
     for key, value in (generics or {}).items():
@@ -167,11 +187,17 @@ class RunOptions:
     top_unit: str = ""
     std: str = DEFAULT_STD
     output_dir: str = DEFAULT_OUTPUT_DIR
+    osvvm_lib_path: str = ""
+    custom_lib_path: str = ""
     stop_time: str | None = None
     generics: dict[str, str] = field(default_factory=dict)
     extra_analyze_args: list[str] = field(default_factory=lambda: list(DEFAULT_ANALYZE_EXTRA_ARGS))
     extra_elaborate_args: list[str] = field(default_factory=lambda: list(DEFAULT_ELABORATE_EXTRA_ARGS))
     extra_run_args: list[str] = field(default_factory=lambda: list(DEFAULT_RUN_EXTRA_ARGS))
+
+    def library_paths(self) -> list[str]:
+        """Configured precompiled library directories (OSVVM, then custom)."""
+        return [self.osvvm_lib_path, self.custom_lib_path]
 
     def vcd_filename(self) -> str:
         """Bare Dateiname der VCD-Datei (fuer den ``--vcd=``-Parameter,

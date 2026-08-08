@@ -41,7 +41,8 @@ On **every operating system** the interface uses a consistent dark theme
   **waveform viewer** is used as a fallback: a custom VCD parser with digital signals, bus values
   (as hex), a time ruler, and Zoom In / Zoom Fit / Zoom Out
 - Settings dialog for the GHDL path and Surfer path (automatic detection via `PATH`
-  or manual selection; Surfer integration can be enabled/disabled) and the VHDL standard (87/93/00/02/08)
+  or manual selection; Surfer integration can be enabled/disabled), the VHDL standard (87/93/00/02/08),
+  and optional **OSVVM lib path** / **Custom lib path** directories (passed to Analyze/Elaborate/Run as `-P`)
 - Configurable extra flags for GHDL builds with the GCC backend, pre-filled by default
   and adjustable in the settings dialog or reset with "Default":
   - `ghdl -a`: `-Wc,-fprofile-arcs -Wc,-ftest-coverage -fsynopsys -fPIE`
