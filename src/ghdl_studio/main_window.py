@@ -31,6 +31,7 @@ from ghdl_studio.ghdl_commands import (
     build_simulation_option_args,
     clean_output_dir,
     elaborated_executable_path,
+    ensure_osvvm_run_scaffold,
 )
 from ghdl_studio.ghdl_runner import GhdlRunner
 from ghdl_studio.surfer_embed import SurferEmbedder
@@ -461,6 +462,8 @@ class MainWindow(QMainWindow):
             return
         project_cwd = self._project_working_directory()
         output_dir = self._ensure_output_dir()
+        # OSVVM TCL normally creates this; plain GHDL runs still open the file.
+        ensure_osvvm_run_scaffold(project_cwd)
         vcd_abs = str(Path(output_dir) / self._run_options.vcd_filename())
         ghw_abs = str(Path(output_dir) / self._run_options.ghw_filename())
         sim_opts = build_simulation_option_args(

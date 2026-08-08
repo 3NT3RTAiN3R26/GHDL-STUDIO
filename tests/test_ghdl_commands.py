@@ -11,6 +11,7 @@ from ghdl_studio.ghdl_commands import (
     build_simulation_option_args,
     clean_output_dir,
     elaborated_executable_path,
+    ensure_osvvm_run_scaffold,
     parse_ghdl_version,
 )
 
@@ -84,6 +85,16 @@ def test_build_simulation_option_args():
         "--wave=/tmp/a.ghw",
         "--stop-time=200ns",
     ]
+
+
+def test_ensure_osvvm_run_scaffold_creates_dir_and_executable_yml(tmp_path):
+    yml = ensure_osvvm_run_scaffold(str(tmp_path))
+    assert yml == tmp_path / "OsvvmTemp_GHDL" / "OsvvmRun.yml"
+    assert yml.is_file()
+    # Second call is idempotent and must not fail if the file already exists.
+    again = ensure_osvvm_run_scaffold(str(tmp_path))
+    assert again == yml
+    assert yml.stat().st_mode & 0o111  # executable bit set on Unix
 
 
 def test_build_analyze_args_requires_files():

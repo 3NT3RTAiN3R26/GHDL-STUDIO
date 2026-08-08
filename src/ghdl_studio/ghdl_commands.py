@@ -8,12 +8,19 @@ from __future__ import annotations
 
 import re
 import shutil
+import stat
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
 VHDL_STANDARDS = ("87", "93", "93c", "00", "02", "08")
 DEFAULT_STD = "08"
+
+# OSVVM's TCL flow normally creates this scaffold for reports. When a
+# testbench is launched via plain ``ghdl -r`` / the elaborated binary,
+# Process_SetupDUT still expects the file to exist relative to cwd.
+OSVVM_TEMP_DIR_NAME = "OsvvmTemp_GHDL"
+OSVVM_RUN_YML_NAME = "OsvvmRun.yml"
 
 # Name des Ausgabeverzeichnisses, in dem alle von GHDL generierten Dateien
 # landen (Work-Bibliothek work-obj*.cf, Objektdateien *.o, VCD-Dumps *.vcd,
@@ -251,6 +258,28 @@ class RunOptions:
     def ghw_path(self) -> str:
         """Pfad zur GHW-Datei relativ zum Arbeitsverzeichnis von GHDL Studio."""
         return str(Path(self.output_dir) / self.ghw_filename())
+
+
+def ensure_osvvm_run_scaffold(project_cwd: str) -> Path:
+    """Create the OSVVM temp report scaffold under ``project_cwd`` if missing.
+
+    Equivalent to::
+
+        mkdir -p OsvvmTemp_GHDL
+        touch OsvvmTemp_GHDL/OsvvmRun.yml
+        chmod +x OsvvmTemp_GHDL/OsvvmRun.yml
+
+    Returns the path to ``OsvvmRun.yml``.
+    """
+    temp_dir = Path(project_cwd) / OSVVM_TEMP_DIR_NAME
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    run_yml = temp_dir / OSVVM_RUN_YML_NAME
+    if not run_yml.exists():
+        run_yml.touch()
+    # Match the TCL flow: make the yaml executable (no-op on Windows perms).
+    mode = run_yml.stat().st_mode
+    run_yml.chmod(mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    return run_yml
 
 
 def clean_output_dir(output_dir: str) -> list[str]:

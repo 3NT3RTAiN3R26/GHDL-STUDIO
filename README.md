@@ -36,6 +36,8 @@ On **every operating system** the interface uses a consistent dark theme
   similar to a `clean` target in a GHDL Makefile
 - Live log console shows GHDL output and **OSVVM transcript** lines (`%% … Log …`),
   including text that GHDL writes on stderr
+- Before **Run**, creates the OSVVM report scaffold (`OsvvmTemp_GHDL/OsvvmRun.yml`)
+  in the project directory when missing (normally created by the OSVVM TCL flow)
 - Live log console with colour coding (command / output / error / success)
 - **Fully embedded [Surfer](https://surfer-project.org/)** in the "Waveforms" tab:
   If Surfer is installed, it is started automatically after each simulation run and its
