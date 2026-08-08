@@ -66,3 +66,14 @@ def test_move_emits_files_changed(explorer):
     widget._on_move_up()
     assert received
     assert received[-1] == [paths[0], paths[2], paths[1]]
+
+
+def test_add_txt_data_file_is_listed_but_marked(qapp, tmp_path):
+    widget = FileExplorer()
+    txt = tmp_path / "ref_wave_data.txt"
+    txt.write_text("1.0 2.0\n")
+    widget.add_files([str(txt)])
+    files = widget.files()
+    assert files == [str(txt.resolve())]
+    item = widget._list.item(0)
+    assert "Data/stimulus" in item.toolTip() or "not passed to ghdl" in item.toolTip()

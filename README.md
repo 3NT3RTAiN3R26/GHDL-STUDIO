@@ -9,11 +9,13 @@ On **every operating system** the interface uses a consistent dark theme
 
 ## Features (current status)
 
-- Manage source files in a project (add/remove, **Move up** / **Move down** for
-  compile order), both **VHDL** (`.vhd`/`.vhdl`) and **Verilog/SystemVerilog**
-  (`.v`/`.sv`) — Verilog files are colour-highlighted and skipped during the
-  `Analyze` step with a note in the log console, because GHDL can only
-  analyse/simulate VHDL
+- Manage project files (add/remove, **Move up** / **Move down** for compile
+  order): **VHDL** (`.vhd`/`.vhdl`), **Verilog/SystemVerilog** (`.v`/`.sv`), and
+  **data/stimulus** files (`.txt`, `.csv`, `.dat`, `.hex`, …). Verilog and data
+  files are colour-highlighted and skipped during `Analyze` (GHDL only analyses
+  VHDL); data files still count toward the project root so layouts such as
+  `input/ref_wave_data.txt` next to `output/` work with TB paths like
+  `../input/…`
 - Simple code editor with VHDL syntax highlighting for viewing/editing files
 - **Choose the top-level entity with a click**: a toolbar on the main window shows a
   combo box of all VHDL entities found in the project files (updated automatically
@@ -27,17 +29,22 @@ On **every operating system** the interface uses a consistent dark theme
   - Combined flow "Analyze + Elaborate + Run" (individual Analyze / Elaborate / Run
   buttons do **not** chain into the next step)
 - **Dedicated output directory** (default `output/`, configurable in Settings):
-  passed to GHDL as `--workdir` so the work library (`work-obj*.cf`), object files
-  (`*.o`), waveform dumps (`*.vcd`/`*.ghw`), coverage data (`*.gcda`/`*.gcno`) and the
-  elaborated simulation executable land there. The process **cwd** remains the project
-  directory (common parent of the VHDL sources) so frameworks such as OSVVM can open
-  relative paths like `OsvvmTemp_GHDL/…`. Via Simulation → **"Clean"** (also a
-  toolbar button) you can clear the output directory at any time —
-  similar to a `clean` target in a GHDL Makefile
+  passed to GHDL as `--workdir`, and used as the process **cwd**, so the work
+  library (`work-obj*.cf`), object files (`*.o`), waveform dumps (`*.vcd`/`*.ghw`),
+  coverage data (`*.gcda`/`*.gcno`) and the elaborated simulation executable land
+  there. Relative TB paths such as `../input/ref_wave_data.txt` therefore resolve
+  next to `output/`. Via Simulation → **"Clean"** (also a toolbar button) you can
+  clear the output directory at any time — similar to a `clean` target in a GHDL
+  Makefile
+- Before **Run**, **stages** project data/stimulus files into
+  `<output>/../input/<filename>` (copy if needed) so `../input/…` opens succeed
+  even when the source file lives elsewhere in the tree; the log shows the cwd and
+  staging result
 - Live log console shows GHDL output and **OSVVM transcript** lines (`%% … Log …`),
   including text that GHDL writes on stderr
 - Before **Run**, creates the OSVVM report scaffold (`OsvvmTemp_GHDL/OsvvmRun.yml`)
-  in the project directory when missing (normally created by the OSVVM TCL flow)
+  in the output directory (and project root) when missing (normally created by the
+  OSVVM TCL flow)
 - Live log console with colour coding (command / output / error / success)
 - **Fully embedded [Surfer](https://surfer-project.org/)** in the "Waveforms" tab:
   If Surfer is installed, it is started automatically after each simulation run and its
@@ -169,6 +176,8 @@ affected) but is not embedded in the "Waveforms" tab. Possible causes:
 
 ## Installation
 
+### Development install (editable)
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
@@ -176,11 +185,54 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-The last step (`pip install -e .`) installs the `ghdl_studio` package itself
-(editable, i.e. source changes take effect immediately) and is **required**
-for `python -m ghdl_studio` or the `ghdl-studio` command to work. Without it
-startup fails with `No module named ghdl_studio`, because `requirements.txt`
-only installs the PySide6 dependency, not the project itself.
+`pip install -e .` installs the `ghdl_studio` package in **editable** mode
+(source changes take effect immediately). It is required for
+`python -m ghdl_studio` / `ghdl-studio` during development. Without it, startup
+fails with `No module named ghdl_studio`, because `requirements.txt` only
+installs dependencies, not the project itself.
+
+### Permanent install (Linux / WSL)
+
+For day-to-day use, install into a dedicated virtualenv with a normal
+(non-editable) `pip install .` and put that venv on your `PATH`. You can then
+run `ghdl-studio` from any directory without activating a project-local `.venv`.
+
+Prerequisites: Python 3.9+ and GHDL on `PATH` (e.g. `sudo apt install ghdl`).
+
+```bash
+# Clone (or use an existing checkout)
+git clone https://github.com/3NT3RTAiN3R26/GHDL-STUDIO.git
+cd GHDL-STUDIO
+git checkout main
+git pull
+
+# Dedicated venv (lives outside the repo)
+python3 -m venv ~/.venvs/ghdl-studio
+source ~/.venvs/ghdl-studio/bin/activate
+pip install -U pip
+pip install .
+
+# Persist PATH so `ghdl-studio` works in new shells
+grep -q '\.venvs/ghdl-studio/bin' ~/.bashrc || \
+  echo 'export PATH="$HOME/.venvs/ghdl-studio/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+
+# Launch from any directory
+ghdl-studio
+```
+
+**Upgrade later:**
+
+```bash
+cd GHDL-STUDIO
+git pull
+source ~/.venvs/ghdl-studio/bin/activate
+pip install .
+```
+
+`pip install -e .` is for development only; `pip install .` is the permanent
+install. Keep the venv (and optionally the clone for upgrades); you do not need
+to activate the project directory’s `.venv` each time.
 
 ## Launch
 
@@ -188,7 +240,7 @@ only installs the PySide6 dependency, not the project itself.
 python -m ghdl_studio
 ```
 
-or, thanks to the editable install:
+or, after install:
 
 ```bash
 ghdl-studio

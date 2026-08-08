@@ -1,4 +1,4 @@
-"""Widget for managing project source files (VHDL and Verilog)."""
+"""Widget for managing project source and data files (VHDL, Verilog, .txt, …)."""
 
 from __future__ import annotations
 
@@ -17,20 +17,21 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ghdl_studio.vhdl_scanner import is_verilog_file
+from ghdl_studio.vhdl_scanner import is_data_file, is_verilog_file, is_vhdl_file
 
 _VERILOG_COLOR = QColor("#c586c0")
+_DATA_COLOR = QColor("#ce9178")
 
 
 class FileExplorer(QWidget):
-    """Lists source files added to the project.
+    """Lists files added to the project.
 
-    Supports VHDL and Verilog/SystemVerilog. GHDL can only analyse/simulate
-    VHDL; Verilog files may still be added (e.g. for mixed-language projects)
-    and are skipped during Analyze (see MainWindow._run_analyze). Verilog
-    entries are colour-highlighted with a tooltip note.
+    Supports VHDL, Verilog/SystemVerilog, and data/stimulus files (``.txt``,
+    ``.csv``, …). Only VHDL is passed to ``ghdl -a``; Verilog and data files
+    are kept for project organisation / relative path discovery and are
+    skipped during Analyze.
 
-    List order is the compile order used for ``ghdl -a``.
+    List order of HDL sources is the compile order used for ``ghdl -a``.
     """
 
     files_changed = Signal(list)  # list[str]
@@ -89,8 +90,23 @@ class FileExplorer(QWidget):
                     "Note: GHDL cannot analyse Verilog files directly. "
                     "This file will be skipped during the Analyze step."
                 )
-            else:
+            elif is_data_file(normalized):
+                item.setForeground(_DATA_COLOR)
+                item.setToolTip(
+                    f"{normalized}\n"
+                    "Data/stimulus file — not passed to ghdl -a. "
+                    "Keep it in the project so the project root is detected; "
+                    "testbenches often open paths such as ../input/*.txt "
+                    "relative to the output directory."
+                )
+            elif is_vhdl_file(normalized):
                 item.setToolTip(normalized)
+            else:
+                item.setForeground(_DATA_COLOR)
+                item.setToolTip(
+                    f"{normalized}\n"
+                    "Non-HDL file — not passed to ghdl -a."
+                )
             self._list.addItem(item)
             existing.add(normalized)
         self.files_changed.emit(self.files())
@@ -118,8 +134,6 @@ class FileExplorer(QWidget):
         if delta > 0 and rows[-1] == count - 1:
             return
 
-        # Move as a contiguous block relative to neighbours; process in an
-        # order that avoids overwriting indices mid-swap.
         ordered = rows if delta > 0 else reversed(rows)
         new_selection: list[int] = []
         for row in ordered:
@@ -142,11 +156,12 @@ class FileExplorer(QWidget):
     def _on_add_files(self) -> None:
         paths, _ = QFileDialog.getOpenFileNames(
             self,
-            "Add source files",
+            "Add project files",
             "",
-            "VHDL and Verilog files (*.vhd *.vhdl *.v *.sv);;"
+            "HDL and data files (*.vhd *.vhdl *.v *.sv *.txt *.csv *.dat *.hex *.mem);;"
             "VHDL files (*.vhd *.vhdl);;"
             "Verilog/SystemVerilog files (*.v *.sv);;"
+            "Data / stimulus files (*.txt *.csv *.dat *.hex *.mem *.bin *.yml *.yaml);;"
             "All files (*)",
         )
         if paths:
