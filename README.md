@@ -130,18 +130,25 @@ betroffen), wird aber nicht in den Tab "Wellenformen" eingebettet. Mögliche Urs
    `pip install -r requirements.txt` erneut ausführen.
 3. **Langsamer Fenstermanager/Compositor** (z. B. unter WSLg): auf
    „Surfer erneut versuchen“ klicken.
-4. **App startet nicht: `libxcb-cursor0 is needed` / xcb-Plugin:**  
+4. **App startet nicht: `libxcb-cursor0 is needed` / xcb-Plugin (auch wenn das Paket installiert ist):**  
+   Sofort-Workaround:
    ```bash
-   sudo apt update
-   sudo apt install libxcb-cursor0
-   # falls QT_QPA_PLATFORM=xcb in der Shell steht:
    unset QT_QPA_PLATFORM
-   git pull origin cursor/ghdl-gui-pyside6-scaffold-85f1
-   pip install -e .
+   export QT_QPA_PLATFORM=wayland
    ghdl-studio
    ```
-   Für Surfer-Einbettung wie unter Windows wird `libxcb-cursor0` + xcb benötigt.
-   Ohne das Paket startet die aktuelle Version unter WSL mit Wayland (ohne Einbettung).
+   Aktueller Branch prüft xcb per echtem Qt-Probe und fällt sonst auf Wayland zurück:
+   ```bash
+   git pull origin cursor/ghdl-gui-pyside6-scaffold-85f1
+   pip install -e .
+   unset QT_QPA_PLATFORM
+   ghdl-studio
+   ```
+   Für Surfer-Einbettung wie unter Windows zusätzlich:
+   ```bash
+   sudo apt install libxcb-cursor0 libxcb-xinerama0 libxcb-icccm4 \
+     libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxkbcommon-x11-0
+   ```
 5. **`platform plugin does not support foreign windows` (WSL/Wayland):** GHDL Studio setzt
    beim Start automatisch `QT_QPA_PLATFORM=xcb`, sofern `libxcb-cursor` gefunden wird.
    App komplett neu starten. Bei manuell gesetztem `QT_QPA_PLATFORM=wayland`:
