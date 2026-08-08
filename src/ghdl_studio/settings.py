@@ -26,6 +26,18 @@ class AppSettings:
     def __init__(self) -> None:
         self._settings = QSettings(ORG_NAME, APP_NAME)
 
+    def _set(self, key: str, value: object) -> None:
+        """Schreibt den Wert und synchronisiert sofort auf die Festplatte.
+
+        QSettings synchronisiert normalerweise erst beim Zerstoeren des
+        Objekts oder periodisch im Hintergrund. Bei kurzlebigen Prozessen
+        (z. B. abruptem Beenden) kann das dazu fuehren, dass zuletzt
+        gesetzte Werte verloren gehen. Der explizite sync()-Aufruf stellt
+        sicher, dass Einstellungen sofort persistiert werden.
+        """
+        self._settings.setValue(key, value)
+        self._settings.sync()
+
     @property
     def ghdl_executable(self) -> str:
         stored = self._settings.value("ghdl_executable", "", str)
@@ -35,7 +47,7 @@ class AppSettings:
 
     @ghdl_executable.setter
     def ghdl_executable(self, value: str) -> None:
-        self._settings.setValue("ghdl_executable", value)
+        self._set("ghdl_executable", value)
 
     @property
     def vhdl_std(self) -> str:
@@ -43,7 +55,7 @@ class AppSettings:
 
     @vhdl_std.setter
     def vhdl_std(self, value: str) -> None:
-        self._settings.setValue("vhdl_std", value)
+        self._set("vhdl_std", value)
 
     @property
     def analyze_extra_args(self) -> list[str]:
@@ -54,7 +66,7 @@ class AppSettings:
 
     @analyze_extra_args.setter
     def analyze_extra_args(self, value: list[str]) -> None:
-        self._settings.setValue("analyze_extra_args", " ".join(value))
+        self._set("analyze_extra_args", " ".join(value))
 
     @property
     def elaborate_extra_args(self) -> list[str]:
@@ -65,7 +77,7 @@ class AppSettings:
 
     @elaborate_extra_args.setter
     def elaborate_extra_args(self, value: list[str]) -> None:
-        self._settings.setValue("elaborate_extra_args", " ".join(value))
+        self._set("elaborate_extra_args", " ".join(value))
 
     @property
     def run_extra_args(self) -> list[str]:
@@ -76,7 +88,7 @@ class AppSettings:
 
     @run_extra_args.setter
     def run_extra_args(self, value: list[str]) -> None:
-        self._settings.setValue("run_extra_args", " ".join(value))
+        self._set("run_extra_args", " ".join(value))
 
     @property
     def gtkwave_executable(self) -> str:
@@ -87,7 +99,7 @@ class AppSettings:
 
     @gtkwave_executable.setter
     def gtkwave_executable(self, value: str) -> None:
-        self._settings.setValue("gtkwave_executable", value)
+        self._set("gtkwave_executable", value)
 
     @property
     def gtkwave_integration_enabled(self) -> bool:
@@ -95,7 +107,7 @@ class AppSettings:
 
     @gtkwave_integration_enabled.setter
     def gtkwave_integration_enabled(self, value: bool) -> None:
-        self._settings.setValue("gtkwave_integration_enabled", value)
+        self._set("gtkwave_integration_enabled", value)
 
     @property
     def last_project_dir(self) -> str:
@@ -103,7 +115,7 @@ class AppSettings:
 
     @last_project_dir.setter
     def last_project_dir(self, value: str) -> None:
-        self._settings.setValue("last_project_dir", value)
+        self._set("last_project_dir", value)
 
     @property
     def recent_files(self) -> list[str]:
@@ -111,4 +123,4 @@ class AppSettings:
 
     @recent_files.setter
     def recent_files(self, value: list[str]) -> None:
-        self._settings.setValue("recent_files", value)
+        self._set("recent_files", value)
