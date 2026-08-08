@@ -9,10 +9,11 @@ On **every operating system** the interface uses a consistent dark theme
 
 ## Features (current status)
 
-- Manage source files in a project (add/remove), both **VHDL**
-  (`.vhd`/`.vhdl`) and **Verilog/SystemVerilog** (`.v`/`.sv`) — Verilog files are
-  colour-highlighted and skipped during the `Analyze` step with a note in the
-  log console, because GHDL can only analyse/simulate VHDL
+- Manage source files in a project (add/remove, **Move up** / **Move down** for
+  compile order), both **VHDL** (`.vhd`/`.vhdl`) and **Verilog/SystemVerilog**
+  (`.v`/`.sv`) — Verilog files are colour-highlighted and skipped during the
+  `Analyze` step with a note in the log console, because GHDL can only
+  analyse/simulate VHDL
 - Simple code editor with VHDL syntax highlighting for viewing/editing files
 - **Choose the top-level entity with a click**: a toolbar on the main window shows a
   combo box of all VHDL entities found in the project files (updated automatically
