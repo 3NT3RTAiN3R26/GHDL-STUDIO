@@ -517,15 +517,20 @@ class MainWindow(QMainWindow):
             self._surfer_container = None
 
     def _on_surfer_embedded(self, container: QWidget) -> None:
-        # Unter Windows kann der Container bereits vom Embedder in das Layout
-        # gehaengt worden sein (noetig fuer ein gueltiges natives winId vor
-        # SetParent). clear + addWidget ist in beiden Faellen idempotent.
+        # Unter Windows/Linux kann der Container bereits vom Embedder im Layout
+        # haengen. clear + addWidget ist idempotent. Zuerst Stack umschalten,
+        # damit der Container eine echte Groesse bekommt (wichtig fuer Resize-
+        # Sync des eingebetteten Surfer-Fensters).
         if container is not self._surfer_container:
             self._clear_surfer_container()
             self._surfer_container = container
             if self._surfer_page_layout.indexOf(container) < 0:
                 self._surfer_page_layout.addWidget(container)
         self._waveform_stack.setCurrentIndex(_WAVEFORM_PAGE_SURFER)
+        container.show()
+        resizer = getattr(container, "_ghdl_studio_resize_sync", None)
+        if resizer is not None and hasattr(resizer, "_resize_child"):
+            resizer._resize_child()
         self._waveform_status_label.setText("Wellenform-Anzeige: Surfer (eingebettet).")
         self._surfer_retry_button.setVisible(False)
         self._log_console.append_success("Surfer wurde erfolgreich in den Wellenformen-Tab eingebettet.")

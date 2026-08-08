@@ -36,11 +36,13 @@ from PySide6.QtCore import (
     QObject,
     QProcess,
     QProcessEnvironment,
+    QSize,
     Qt,
     QTimer,
     Signal,
 )
-from PySide6.QtWidgets import QWidget
+from PySide6.QtGui import QWindow
+from PySide6.QtWidgets import QApplication, QSizePolicy, QWidget
 
 _POLL_INTERVAL_MS = 300
 _MAX_POLL_ATTEMPTS = 60  # ~18 Sekunden Timeout - WSLg/langsamere Compositor koennen etwas brauchen
@@ -432,13 +434,49 @@ class _X11ChildResizeSync(QObject):
             pass
 
 
+def _is_wsl() -> bool:
+    """Ob wir unter Windows Subsystem for Linux laufen (WSLg/XWayland)."""
+    if os.environ.get("WSL_DISTRO_NAME") or os.environ.get("WSL_INTEROP"):
+        return True
+    try:
+        with open("/proc/version", encoding="utf-8", errors="replace") as version_file:
+            return "microsoft" in version_file.read().lower()
+    except OSError:
+        return False
+
+
+def _container_embed_size(container: QWidget) -> tuple[int, int]:
+    """Ermittelt eine brauchbare Einbettungsgroesse (vermeidet 0x0 bei noch
+    nicht sichtbarem Stack-Page)."""
+    width = max(container.width(), 1)
+    height = max(container.height(), 1)
+    parent = container.parentWidget()
+    if parent is not None:
+        width = max(width, parent.width(), 400)
+        height = max(height, parent.height(), 300)
+    return width, height
+
+
+def _embed_foreign_window_x11_qt(xid: int, parent_widget: QWidget | None) -> QWidget:
+    """Bettet per ``QWindow.fromWinId`` + ``createWindowContainer`` ein.
+
+    Unter xcb zuverlaessiger fuer GPU-Apps (Surfer/wgpu) als manuelles
+    ``XReparentWindow``, das unter WSLg oft nur einen leeren Tab hinterlaesst.
+    """
+    foreign = QWindow.fromWinId(xid)
+    if foreign is None:
+        raise OSError("QWindow.fromWinId lieferte None.")
+    container = QWidget.createWindowContainer(foreign, parent_widget)
+    container.setMinimumSize(QSize(200, 150))
+    container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+    return container
+
+
 def _embed_foreign_window_x11(xid: int, container: QWidget) -> None:
     """Bettet das X11-Fenster ``xid`` per ``XReparentWindow`` in ``container`` ein.
 
-    Im Gegensatz zu ``QWindow.fromWinId()``/``createWindowContainer()``
-    funktioniert dieser Weg auch dann, wenn das Qt-Platform-Plugin keine
-    "foreign windows" unterstuetzt — solange Qt selbst ueber XCB laeuft und
-    ``container.winId()`` eine echte X11-Window-ID liefert (WSLg via XWayland).
+    Fallback, falls ``createWindowContainer`` nicht verfuegbar ist. Unter
+    WSLg/XWayland bleiben GPU-Fenster (Surfer) dabei haeufig schwarz/leer.
     """
     from Xlib import X, display  # noqa: PLC0415
     from Xlib.error import XError
@@ -447,33 +485,28 @@ def _embed_foreign_window_x11(xid: int, container: QWidget) -> None:
     if platform and platform != "xcb":
         raise OSError(
             f"Qt laeuft mit dem Platform-Plugin '{platform}', nicht 'xcb'. "
-            "X11-Einbettung von Surfer erfordert XCB (unter WSL/WSLg: App neu "
-            "starten — GHDL Studio setzt QT_QPA_PLATFORM=xcb automatisch, sofern "
-            "nicht anders gesetzt; alternativ manuell "
-            "'export QT_QPA_PLATFORM=xcb' vor dem Start)."
+            "X11-Einbettung von Surfer erfordert XCB."
         )
 
     container_xid = int(container.winId())
     if not container_xid:
         raise OSError("Qt-Container besitzt keine X11-Window-ID (winId=0).")
 
+    width, height = _container_embed_size(container)
+    container.resize(width, height)
+    QApplication.processEvents()
+
     conn = display.Display()
     try:
         child = conn.create_resource_object("window", xid)
         parent = conn.create_resource_object("window", container_xid)
         try:
-            # Vom Window-Manager loesen, dann als Child in den Qt-Container.
             child.unmap()
             conn.sync()
             child.reparent(parent, 0, 0)
-            child.configure(
-                width=max(container.width(), 1),
-                height=max(container.height(), 1),
-                border_width=0,
-            )
+            child.configure(width=width, height=height, border_width=0, stack_mode=X.Above)
             child.map()
             conn.sync()
-            # Sichtbarkeit / Map-State kurz verifizieren
             attrs = child.get_attributes()
             if attrs.map_state == X.IsUnmapped:
                 child.map()
@@ -489,8 +522,10 @@ def _embed_foreign_window_x11(xid: int, container: QWidget) -> None:
     resizer = _X11ChildResizeSync(xid, container)
     container.installEventFilter(resizer)
     container._ghdl_studio_resize_sync = resizer  # type: ignore[attr-defined]
-    # Sofort einmal auf aktuelle Container-Groesse bringen
     resizer._resize_child()
+    # Spaetere Layout-Passes (Stack-Umschaltung) erneut synchronisieren.
+    for delay_ms in (50, 200, 500):
+        QTimer.singleShot(delay_ms, resizer._resize_child)
 
 
 def _to_win32_long(value: int) -> int:
@@ -808,24 +843,50 @@ class SurferEmbedder(QObject):
         return reason
 
     def _finish_embedding(self, win_id: int) -> None:
-        # Windows und Linux nutzen denselben Ablauf: zuerst einen nativen
-        # Qt-Container ins Layout haengen (winId + Groesse), dann im
-        # naechsten Event-Loop-Tick per OS-API reparenten. ``embedded``
-        # wird erst nach erfolgreichem Reparent gesendet.
-        if sys.platform.startswith("win") or sys.platform.startswith("linux"):
+        if sys.platform.startswith("win"):
             container = QWidget(self._parent_widget)
             container.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
             parent = self._parent_widget
             if parent is not None and parent.layout() is not None:
                 parent.layout().addWidget(container)
             container.show()
-            if sys.platform.startswith("win"):
-                QTimer.singleShot(0, lambda: self._complete_os_embed(win_id, container, "windows"))
-            else:
-                QTimer.singleShot(0, lambda: self._complete_os_embed(win_id, container, "x11"))
+            QTimer.singleShot(0, lambda: self._complete_os_embed(win_id, container, "windows"))
+            return
+
+        if sys.platform.startswith("linux"):
+            self._finish_embedding_linux(win_id)
             return
 
         self.failed.emit("Fenster-Einbettung wird auf dieser Plattform nicht unterstuetzt.")
+
+    def _finish_embedding_linux(self, win_id: int) -> None:
+        """Linux: zuerst Qt-``createWindowContainer`` (besser fuer Surfer/wgpu),
+        sonst ``XReparentWindow``. Unter WSLg kann Letzteres optisch leer bleiben."""
+        # 1) Qt-Foreign-Window — unter xcb oft die einzige Variante, die
+        #    GPU-gerenderte Fenster (Surfer) sichtbar einbettet.
+        if qt_platform_name() == "xcb":
+            try:
+                container = _embed_foreign_window_x11_qt(win_id, self._parent_widget)
+                self.embedded.emit(container)
+                return
+            except Exception as qt_exc:  # noqa: BLE001
+                print(
+                    f"Hinweis: createWindowContainer fehlgeschlagen ({qt_exc}); "
+                    "versuche XReparentWindow…",
+                    file=sys.stderr,
+                )
+
+        # 2) Fallback: natives XReparenting
+        container = QWidget(self._parent_widget)
+        container.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
+        container.setMinimumSize(QSize(200, 150))
+        container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        parent = self._parent_widget
+        if parent is not None and parent.layout() is not None:
+            parent.layout().addWidget(container)
+        container.show()
+        QApplication.processEvents()
+        QTimer.singleShot(0, lambda: self._complete_os_embed(win_id, container, "x11"))
 
     def _complete_os_embed(self, win_id: int, container: QWidget, backend: str) -> None:
         try:
@@ -833,6 +894,16 @@ class SurferEmbedder(QObject):
                 _embed_foreign_window_windows(win_id, container)
             else:
                 _embed_foreign_window_x11(win_id, container)
+                if _is_wsl():
+                    # Surfer (wgpu) bleibt nach XReparent unter WSLg oft schwarz.
+                    # createWindowContainer wurde bereits versucht; Nutzer informieren.
+                    print(
+                        "Hinweis: Unter WSL/XWayland kann eingebettetes Surfer leer wirken "
+                        "(GPU-Fenster). Falls der Tab leer bleibt: Surfer separat nutzen "
+                        "oder den internen Viewer — Einbettung funktioniert unter nativem "
+                        "Windows zuverlaessiger.",
+                        file=sys.stderr,
+                    )
         except Exception as exc:  # noqa: BLE001 - dem Nutzer die Ursache anzeigen
             parent = container.parentWidget()
             if parent is not None and parent.layout() is not None:

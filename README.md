@@ -152,6 +152,12 @@ betroffen), wird aber nicht in den Tab "Wellenformen" eingebettet. Mögliche Urs
    vorübergehend `export QT_QPA_PLATFORM=xcb` (nach Installation von `libxcb-cursor0`).
 6. **Windows: Tab leer, Surfer bleibt extern:** Einbettung erfolgt per `SetParent` mit
    korrekter 32-bit-`LONG`-Normierung — aktuellen Branch-Stand ziehen und erneut testen.
+7. **Linux/WSL: Status „Surfer (eingebettet)“, Tab aber leer:** Surfer ist eine GPU-App
+   (wgpu); nach `XReparentWindow` bleibt der Inhalt unter WSLg/XWayland oft schwarz.
+   Der aktuelle Stand nutzt unter xcb zuerst `QWindow.createWindowContainer`. Bitte
+   Branch ziehen und erneut testen. Bleibt der Tab leer, Surfer als separates Fenster
+   nutzen (interner Viewer zeigt die Wellen trotzdem) — unter nativem Windows ist die
+   Einbettung zuverlässiger.
 
 ## Installation
 
