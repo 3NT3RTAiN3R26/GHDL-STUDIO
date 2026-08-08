@@ -1,0 +1,24 @@
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+*.o
+*.cf
+*.vcd
+*.ghw
+*.gcda
+*.gcno
+work-obj*.cf
+# Standard-Ausgabeverzeichnis von GHDL Studio (siehe DEFAULT_OUTPUT_DIR in
+# ghdl_commands.py): enthaelt Work-Bibliothek, Objektdateien, VCD-Dumps,
+# Coverage-Daten und die elaborierte Simulations-Executable.
+/output/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.log
+.DS_Store
