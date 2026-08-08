@@ -9,10 +9,12 @@ from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QComboBox,
     QDockWidget,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QMainWindow,
     QMessageBox,
+    QPushButton,
     QStackedWidget,
     QTabWidget,
     QToolBar,
@@ -79,6 +81,18 @@ class MainWindow(QMainWindow):
         self._waveform_status_label = QLabel(self)
         self._waveform_status_label.setStyleSheet("QLabel { padding: 2px 6px; color: #555; }")
         self._waveform_status_label.setText("Noch keine Simulation ausgefuehrt.")
+        self._waveform_status_label.setWordWrap(True)
+
+        self._gtkwave_retry_button = QPushButton("GTKWave erneut versuchen", self)
+        self._gtkwave_retry_button.setVisible(False)
+        self._gtkwave_retry_button.clicked.connect(self._on_retry_gtkwave_clicked)
+
+        status_row = QHBoxLayout()
+        status_row.setContentsMargins(0, 0, 0, 0)
+        status_row.addWidget(self._waveform_status_label, 1)
+        status_row.addWidget(self._gtkwave_retry_button)
+        status_row_widget = QWidget(self)
+        status_row_widget.setLayout(status_row)
 
         self._waveform_stack = QStackedWidget(self)
         self._waveform_stack.addWidget(self._gtkwave_page)  # index 0
@@ -88,7 +102,7 @@ class MainWindow(QMainWindow):
         waveform_tab_layout = QVBoxLayout(self._waveform_tab)
         waveform_tab_layout.setContentsMargins(0, 0, 0, 0)
         waveform_tab_layout.setSpacing(0)
-        waveform_tab_layout.addWidget(self._waveform_status_label)
+        waveform_tab_layout.addWidget(status_row_widget)
         waveform_tab_layout.addWidget(self._waveform_stack)
 
         self._editor_tabs = QTabWidget(self)
@@ -410,6 +424,7 @@ class MainWindow(QMainWindow):
     def _start_gtkwave_for(self, vcd_path: str) -> None:
         self._gtkwave_embedder.stop()
         self._clear_gtkwave_container()
+        self._gtkwave_retry_button.setVisible(False)
 
         if not self._settings.gtkwave_integration_enabled:
             self._waveform_status_label.setText("Wellenform-Anzeige: interner Viewer (GTKWave-Integration deaktiviert).")
@@ -427,6 +442,10 @@ class MainWindow(QMainWindow):
         )
         self._gtkwave_embedder.start(gtkwave_executable, vcd_path, self._gtkwave_page)
 
+    def _on_retry_gtkwave_clicked(self) -> None:
+        if self._current_vcd_path:
+            self._start_gtkwave_for(self._current_vcd_path)
+
     def _clear_gtkwave_container(self) -> None:
         if self._gtkwave_container is not None:
             self._gtkwave_page_layout.removeWidget(self._gtkwave_container)
@@ -439,12 +458,15 @@ class MainWindow(QMainWindow):
         self._gtkwave_page_layout.addWidget(container)
         self._waveform_stack.setCurrentIndex(_WAVEFORM_PAGE_GTKWAVE)
         self._waveform_status_label.setText("Wellenform-Anzeige: GTKWave (eingebettet).")
+        self._gtkwave_retry_button.setVisible(False)
         self._log_console.append_success("GTKWave wurde erfolgreich in den Wellenformen-Tab eingebettet.")
 
     def _on_gtkwave_failed(self, reason: str) -> None:
         self._waveform_status_label.setText(f"Wellenform-Anzeige: interner Viewer (GTKWave: {reason})")
         self._log_console.append_output(f"GTKWave-Einbettung nicht verfuegbar: {reason}")
         self._waveform_stack.setCurrentIndex(_WAVEFORM_PAGE_INTERNAL)
+        if self._settings.gtkwave_integration_enabled and self._settings.gtkwave_executable:
+            self._gtkwave_retry_button.setVisible(True)
 
     def closeEvent(self, event) -> None:  # noqa: N802 (Qt override)
         self._gtkwave_embedder.stop()
