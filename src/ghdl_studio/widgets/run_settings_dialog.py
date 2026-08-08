@@ -35,16 +35,16 @@ from ghdl_studio.settings import AppSettings
 class RunSettingsDialog(QDialog):
     def __init__(self, settings: AppSettings, run_options: RunOptions, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Einstellungen")
+        self.setWindowTitle("Settings")
         self._settings = settings
         self._run_options = run_options
 
         self._ghdl_path_edit = QLineEdit(settings.ghdl_executable, self)
-        browse_button = QPushButton("Durchsuchen...", self)
+        browse_button = QPushButton("Browse...", self)
         browse_button.clicked.connect(self._on_browse_ghdl)
-        detect_button = QPushButton("Automatisch erkennen", self)
+        detect_button = QPushButton("Detect automatically", self)
         detect_button.clicked.connect(self._on_autodetect)
-        check_button = QPushButton("Version pruefen", self)
+        check_button = QPushButton("Check version", self)
         check_button.clicked.connect(self._on_check_version)
 
         ghdl_path_row = QHBoxLayout()
@@ -58,13 +58,13 @@ class RunSettingsDialog(QDialog):
 
         self._output_dir_edit = QLineEdit(run_options.output_dir, self)
         self._output_dir_edit.setToolTip(
-            "Verzeichnis, in dem GHDL alle generierten Dateien ablegt (Work-Bibliothek, "
-            "*.o, *.vcd, *.gcda/*.gcno sowie die elaborierte Simulations-Executable), "
-            "damit das Projektverzeichnis nicht zugemuellt wird."
+            "Directory where GHDL writes all generated files (work library, "
+            "*.o, *.vcd, *.gcda/*.gcno and the elaborated simulation executable), "
+            "so the project directory is not cluttered."
         )
-        output_dir_browse_button = QPushButton("Durchsuchen...", self)
+        output_dir_browse_button = QPushButton("Browse...", self)
         output_dir_browse_button.clicked.connect(self._on_browse_output_dir)
-        output_dir_reset_button = QPushButton("Standard", self)
+        output_dir_reset_button = QPushButton("Default", self)
         output_dir_reset_button.clicked.connect(self._on_reset_output_dir)
         output_dir_row = QHBoxLayout()
         output_dir_row.addWidget(self._output_dir_edit)
@@ -72,9 +72,9 @@ class RunSettingsDialog(QDialog):
         output_dir_row.addWidget(output_dir_reset_button)
 
         self._surfer_path_edit = QLineEdit(settings.surfer_executable, self)
-        surfer_browse_button = QPushButton("Durchsuchen...", self)
+        surfer_browse_button = QPushButton("Browse...", self)
         surfer_browse_button.clicked.connect(self._on_browse_surfer)
-        surfer_detect_button = QPushButton("Automatisch erkennen", self)
+        surfer_detect_button = QPushButton("Detect automatically", self)
         surfer_detect_button.clicked.connect(self._on_autodetect_surfer)
         surfer_path_row = QHBoxLayout()
         surfer_path_row.addWidget(self._surfer_path_edit)
@@ -82,14 +82,14 @@ class RunSettingsDialog(QDialog):
         surfer_path_row.addWidget(surfer_detect_button)
 
         self._surfer_enabled_check = QCheckBox(
-            "Surfer im Wellenformen-Tab einbetten (falls verfuegbar)", self
+            "Embed Surfer in the Waveforms tab (if available)", self
         )
         self._surfer_enabled_check.setChecked(settings.surfer_integration_enabled)
         if not is_embedding_supported():
             self._surfer_enabled_check.setToolTip(
-                "Fenster-Einbettung wird auf dieser Plattform nicht unterstuetzt "
-                "(nur Linux/X11 und Windows). Surfer wird stattdessen als "
-                "eigenstaendiges Fenster geoeffnet."
+                "Window embedding is not supported on this platform "
+                "(Linux/X11 and Windows only). Surfer will instead open as "
+                "a separate window."
             )
 
         # Top-Level-Entity und Stop-Zeit werden direkt auf der Hauptseite in
@@ -97,11 +97,11 @@ class RunSettingsDialog(QDialog):
         # den erkannten VHDL-Entities) und sind daher hier nicht dupliziert.
 
         self._analyze_flags_edit = QLineEdit(" ".join(run_options.extra_analyze_args), self)
-        self._analyze_flags_edit.setPlaceholderText("zusaetzliche Flags fuer ghdl -a, per Leerzeichen getrennt")
-        reset_analyze_flags_button = QPushButton("Standard", self)
+        self._analyze_flags_edit.setPlaceholderText("Additional flags for ghdl -a, separated by spaces")
+        reset_analyze_flags_button = QPushButton("Default", self)
         reset_analyze_flags_button.setToolTip(
-            "Setzt die Analyze-Flags auf die Standardwerte zurueck "
-            "(z. B. sinnvoll fuer GHDL-Builds mit GCC-Backend / Coverage)."
+            "Resets the Analyse flags to their defaults "
+            "(e.g. useful for GHDL builds with the GCC backend / coverage)."
         )
         reset_analyze_flags_button.clicked.connect(self._on_reset_analyze_flags)
         analyze_flags_row = QHBoxLayout()
@@ -109,11 +109,11 @@ class RunSettingsDialog(QDialog):
         analyze_flags_row.addWidget(reset_analyze_flags_button)
 
         self._elaborate_flags_edit = QLineEdit(" ".join(run_options.extra_elaborate_args), self)
-        self._elaborate_flags_edit.setPlaceholderText("zusaetzliche Flags fuer ghdl -e, per Leerzeichen getrennt")
-        reset_elaborate_flags_button = QPushButton("Standard", self)
+        self._elaborate_flags_edit.setPlaceholderText("Additional flags for ghdl -e, separated by spaces")
+        reset_elaborate_flags_button = QPushButton("Default", self)
         reset_elaborate_flags_button.setToolTip(
-            "Setzt die Elaborate-Flags auf die Standardwerte zurueck "
-            "(z. B. sinnvoll fuer GHDL-Builds mit GCC-Backend / Coverage)."
+            "Resets the Elaborate flags to their defaults "
+            "(e.g. useful for GHDL builds with the GCC backend / coverage)."
         )
         reset_elaborate_flags_button.clicked.connect(self._on_reset_elaborate_flags)
         elaborate_flags_row = QHBoxLayout()
@@ -121,11 +121,11 @@ class RunSettingsDialog(QDialog):
         elaborate_flags_row.addWidget(reset_elaborate_flags_button)
 
         self._run_flags_edit = QLineEdit(" ".join(run_options.extra_run_args), self)
-        self._run_flags_edit.setPlaceholderText("zusaetzliche Flags fuer ghdl -r, per Leerzeichen getrennt")
-        reset_run_flags_button = QPushButton("Standard", self)
+        self._run_flags_edit.setPlaceholderText("Additional flags for ghdl -r, separated by spaces")
+        reset_run_flags_button = QPushButton("Default", self)
         reset_run_flags_button.setToolTip(
-            "Setzt die Run-Flags auf die Standardwerte zurueck "
-            "(z. B. sinnvoll fuer GHDL-Builds mit GCC-Backend)."
+            "Resets the Run flags to their defaults "
+            "(e.g. useful for GHDL builds with the GCC backend)."
         )
         reset_run_flags_button.clicked.connect(self._on_reset_run_flags)
         run_flags_row = QHBoxLayout()
@@ -133,15 +133,15 @@ class RunSettingsDialog(QDialog):
         run_flags_row.addWidget(reset_run_flags_button)
 
         form = QFormLayout()
-        form.addRow("GHDL-Executable:", ghdl_path_row)
+        form.addRow("GHDL executable:", ghdl_path_row)
         form.addRow("", check_button)
-        form.addRow("VHDL-Standard:", self._std_combo)
-        form.addRow("Ausgabeverzeichnis:", output_dir_row)
-        form.addRow("Surfer-Executable:", surfer_path_row)
+        form.addRow("VHDL standard:", self._std_combo)
+        form.addRow("Output directory:", output_dir_row)
+        form.addRow("Surfer executable:", surfer_path_row)
         form.addRow("", self._surfer_enabled_check)
-        form.addRow("Analyze-Flags (ghdl -a):", analyze_flags_row)
-        form.addRow("Elaborate-Flags (ghdl -e):", elaborate_flags_row)
-        form.addRow("Run-Flags (ghdl -r):", run_flags_row)
+        form.addRow("Analyze flags (ghdl -a):", analyze_flags_row)
+        form.addRow("Elaborate flags (ghdl -e):", elaborate_flags_row)
+        form.addRow("Run flags (ghdl -r):", run_flags_row)
 
         self._version_label = QLabel("", self)
 
@@ -157,7 +157,7 @@ class RunSettingsDialog(QDialog):
         layout.addWidget(buttons)
 
     def _on_browse_ghdl(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "GHDL-Executable auswaehlen")
+        path, _ = QFileDialog.getOpenFileName(self, "Select GHDL executable")
         if path:
             self._ghdl_path_edit.setText(path)
 
@@ -167,11 +167,11 @@ class RunSettingsDialog(QDialog):
             self._ghdl_path_edit.setText(found)
         else:
             QMessageBox.warning(
-                self, "Nicht gefunden", "GHDL wurde nicht im PATH gefunden. Bitte manuell auswaehlen."
+                self, "Not found", "GHDL was not found in PATH. Please select it manually."
             )
 
     def _on_browse_output_dir(self) -> None:
-        directory = QFileDialog.getExistingDirectory(self, "Ausgabeverzeichnis auswaehlen")
+        directory = QFileDialog.getExistingDirectory(self, "Select output directory")
         if directory:
             self._output_dir_edit.setText(directory)
 
@@ -179,7 +179,7 @@ class RunSettingsDialog(QDialog):
         self._output_dir_edit.setText(DEFAULT_OUTPUT_DIR)
 
     def _on_browse_surfer(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "Surfer-Executable auswaehlen")
+        path, _ = QFileDialog.getOpenFileName(self, "Select Surfer executable")
         if path:
             self._surfer_path_edit.setText(path)
 
@@ -190,26 +190,26 @@ class RunSettingsDialog(QDialog):
         else:
             QMessageBox.warning(
                 self,
-                "Nicht gefunden",
-                "Surfer wurde nicht im PATH gefunden. Bitte manuell auswaehlen.\n\n"
-                "Einfachste Installation (ohne Rust/Cargo):\n"
-                "Unter Ubuntu 22.04/WSL das Rocky-Binary nutzen (aeltere glibc),\n"
-                "siehe README.md. Neuere Distros / Windows:\n"
+                "Not found",
+                "Surfer was not found in PATH. Please select it manually.\n\n"
+                "Easiest installation (no Rust/Cargo):\n"
+                "On Ubuntu 22.04/WSL use the Rocky binary (older glibc),\n"
+                "see README.md. Newer distros / Windows:\n"
                 "https://gitlab.com/surfer-project/surfer/-/releases\n"
-                "entpacken und den Pfad hier eintragen.",
+                "extract and enter the path here.",
             )
 
     def _on_check_version(self) -> None:
         path = self._ghdl_path_edit.text().strip()
         if not path:
-            QMessageBox.warning(self, "Kein Pfad", "Bitte zuerst einen Pfad zur GHDL-Executable angeben.")
+            QMessageBox.warning(self, "No path", "Please enter a path to the GHDL executable first.")
             return
         try:
             info = get_ghdl_version(path)
         except Exception as exc:  # noqa: BLE001 - dem Nutzer die Ursache anzeigen
-            self._version_label.setText(f"Fehler: {exc}")
+            self._version_label.setText(f"Error: {exc}")
             return
-        self._version_label.setText(f"Gefunden: {info.raw}")
+        self._version_label.setText(f"Found: {info.raw}")
 
     def _on_reset_analyze_flags(self) -> None:
         self._analyze_flags_edit.setText(" ".join(DEFAULT_ANALYZE_EXTRA_ARGS))

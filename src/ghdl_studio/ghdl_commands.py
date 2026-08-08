@@ -97,7 +97,7 @@ def build_analyze_args(
 ) -> list[str]:
     """Baut die Argumente fuer ``ghdl -a`` (Analyze) auf."""
     if not files:
-        raise ValueError("Es muss mindestens eine VHDL-Datei angegeben werden.")
+        raise ValueError("At least one VHDL file must be specified.")
     args = ["-a", f"--std={std}"]
     if work_dir:
         args.append(f"--workdir={work_dir}")
@@ -114,7 +114,7 @@ def build_elaborate_args(
 ) -> list[str]:
     """Baut die Argumente fuer ``ghdl -e`` (Elaborate) auf."""
     if not unit:
-        raise ValueError("Es muss eine Top-Level-Entity angegeben werden.")
+        raise ValueError("A top-level entity must be specified.")
     args = ["-e", f"--std={std}"]
     if work_dir:
         args.append(f"--workdir={work_dir}")
@@ -143,7 +143,7 @@ def build_run_args(
     ``build_analyze_args``/``build_elaborate_args``.
     """
     if not unit:
-        raise ValueError("Es muss eine Top-Level-Entity angegeben werden.")
+        raise ValueError("A top-level entity must be specified.")
     args = ["-r", f"--std={std}"]
     if work_dir:
         args.append(f"--workdir={work_dir}")

@@ -30,7 +30,7 @@ class GhdlRunner(QObject):
 
     def run(self, executable: str, args: list[str], cwd: str | None, label: str) -> None:
         if self.is_running:
-            raise RuntimeError("Es laeuft bereits ein GHDL-Prozess.")
+            raise RuntimeError("A GHDL process is already running.")
 
         self._command_label = label
         self._process = QProcess(self)

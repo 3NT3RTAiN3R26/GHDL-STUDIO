@@ -18,11 +18,11 @@ def main() -> int:
     try:
         app = QApplication(sys.argv)
     except Exception as exc:  # noqa: BLE001 - Qt kann hier auch hart abbrechen
-        print(f"GHDL Studio konnte nicht starten: {exc}", file=sys.stderr)
+        print(f"GHDL Studio could not start: {exc}", file=sys.stderr)
         if sys.platform.startswith("linux"):
             print(
-                "Tipp (Ubuntu/Debian/WSL): sudo apt install libxcb-cursor0\n"
-                "Danach erneut starten. Alternativ: export QT_QPA_PLATFORM=wayland",
+                "Tip (Ubuntu/Debian/WSL): sudo apt install libxcb-cursor0\n"
+                "Then start again. Alternatively: export QT_QPA_PLATFORM=wayland",
                 file=sys.stderr,
             )
         return 1

@@ -279,19 +279,19 @@ class WaveformViewer(QWidget):
         zoom_in = QToolButton(self)
         zoom_in.setIcon(_create_magnifier_icon("+"))
         zoom_in.setIconSize(icon_size)
-        zoom_in.setToolTip("Vergroessern (Zoom +)")
+        zoom_in.setToolTip("Zoom in (Zoom +)")
         zoom_in.clicked.connect(lambda: self._canvas.set_zoom(self._canvas._px_per_unit * 1.5))
 
         zoom_fit = QToolButton(self)
         zoom_fit.setIcon(_create_magnifier_icon(None))
         zoom_fit.setIconSize(icon_size)
-        zoom_fit.setToolTip("Gesamte Simulation einpassen (Zoom Fit)")
+        zoom_fit.setToolTip("Fit entire simulation (Zoom Fit)")
         zoom_fit.clicked.connect(self._on_zoom_fit)
 
         zoom_out = QToolButton(self)
         zoom_out.setIcon(_create_magnifier_icon("-"))
         zoom_out.setIconSize(icon_size)
-        zoom_out.setToolTip("Verkleinern (Zoom -)")
+        zoom_out.setToolTip("Zoom out (Zoom -)")
         zoom_out.clicked.connect(lambda: self._canvas.set_zoom(self._canvas._px_per_unit / 1.5))
 
         toolbar = QHBoxLayout()

@@ -43,9 +43,9 @@ class FileExplorer(QWidget):
         self._list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self._list.itemDoubleClicked.connect(self._on_item_double_clicked)
 
-        add_button = QPushButton("Datei hinzufuegen...", self)
+        add_button = QPushButton("Add file...", self)
         add_button.clicked.connect(self._on_add_files)
-        remove_button = QPushButton("Entfernen", self)
+        remove_button = QPushButton("Remove", self)
         remove_button.clicked.connect(self._on_remove_selected)
 
         button_row = QHBoxLayout()
@@ -71,8 +71,8 @@ class FileExplorer(QWidget):
                 item.setForeground(_VERILOG_COLOR)
                 item.setToolTip(
                     f"{normalized}\n"
-                    "Hinweis: GHDL kann Verilog-Dateien nicht direkt analysieren. "
-                    "Diese Datei wird beim Analyze-Schritt uebersprungen."
+                    "Note: GHDL cannot analyse Verilog files directly. "
+                    "This file will be skipped during the Analyze step."
                 )
             else:
                 item.setToolTip(normalized)
@@ -83,12 +83,12 @@ class FileExplorer(QWidget):
     def _on_add_files(self) -> None:
         paths, _ = QFileDialog.getOpenFileNames(
             self,
-            "Quelldateien hinzufuegen",
+            "Add source files",
             "",
-            "VHDL- und Verilog-Dateien (*.vhd *.vhdl *.v *.sv);;"
-            "VHDL-Dateien (*.vhd *.vhdl);;"
-            "Verilog/SystemVerilog-Dateien (*.v *.sv);;"
-            "Alle Dateien (*)",
+            "VHDL and Verilog files (*.vhd *.vhdl *.v *.sv);;"
+            "VHDL files (*.vhd *.vhdl);;"
+            "Verilog/SystemVerilog files (*.v *.sv);;"
+            "All files (*)",
         )
         if paths:
             self.add_files(paths)

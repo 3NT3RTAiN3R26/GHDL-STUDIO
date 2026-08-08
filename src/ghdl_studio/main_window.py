@@ -84,10 +84,10 @@ class MainWindow(QMainWindow):
         self._waveform_status_label.setStyleSheet(
             "QLabel { padding: 2px 6px; color: #cccccc; background: transparent; }"
         )
-        self._waveform_status_label.setText("Noch keine Simulation ausgefuehrt.")
+        self._waveform_status_label.setText("No simulation has been run yet.")
         self._waveform_status_label.setWordWrap(True)
 
-        self._surfer_retry_button = QPushButton("Surfer erneut versuchen", self)
+        self._surfer_retry_button = QPushButton("Retry Surfer", self)
         self._surfer_retry_button.setVisible(False)
         self._surfer_retry_button.clicked.connect(self._on_retry_surfer_clicked)
 
@@ -115,14 +115,14 @@ class MainWindow(QMainWindow):
 
         self._central_tabs = QTabWidget(self)
         self._central_tabs.addTab(self._editor_tabs, "Editor")
-        self._central_tabs.addTab(self._waveform_tab, "Wellenformen")
+        self._central_tabs.addTab(self._waveform_tab, "Waveforms")
         self.setCentralWidget(self._central_tabs)
 
-        files_dock = QDockWidget("Projektdateien", self)
+        files_dock = QDockWidget("Project files", self)
         files_dock.setWidget(self._file_explorer)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, files_dock)
 
-        log_dock = QDockWidget("Ausgabe", self)
+        log_dock = QDockWidget("Output", self)
         log_dock.setWidget(self._log_console)
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, log_dock)
 
@@ -135,16 +135,16 @@ class MainWindow(QMainWindow):
     def _create_menu(self) -> None:
         menu_bar = self.menuBar()
 
-        file_menu = menu_bar.addMenu("&Datei")
-        add_action = QAction("Quelldatei(en) hinzufuegen...", self)
+        file_menu = menu_bar.addMenu("&File")
+        add_action = QAction("Add source file(s)...", self)
         add_action.triggered.connect(self._file_explorer._on_add_files)
         file_menu.addAction(add_action)
-        save_action = QAction("Speichern", self)
+        save_action = QAction("Save", self)
         save_action.setShortcut("Ctrl+S")
         save_action.triggered.connect(self._save_current_editor)
         file_menu.addAction(save_action)
         file_menu.addSeparator()
-        exit_action = QAction("Beenden", self)
+        exit_action = QAction("Quit", self)
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
 
@@ -166,31 +166,31 @@ class MainWindow(QMainWindow):
         run_menu.addAction(self._all_action)
 
         run_menu.addSeparator()
-        self._stop_action = QAction("Stoppen", self)
+        self._stop_action = QAction("Stop", self)
         self._stop_action.triggered.connect(self._runner.stop)
         run_menu.addAction(self._stop_action)
 
         run_menu.addSeparator()
-        self._clean_action = QAction("Bereinigen (Clean)", self)
+        self._clean_action = QAction("Clean", self)
         self._clean_action.setToolTip(
-            "Entfernt alle generierten Dateien aus dem Ausgabeverzeichnis "
-            "(Work-Bibliothek, *.o, *.vcd, *.gcda/*.gcno, Simulations-Executable)."
+            "Removes all generated files from the output directory "
+            "(work library, *.o, *.vcd, *.gcda/*.gcno, simulation executable)."
         )
         self._clean_action.triggered.connect(self._on_clean_clicked)
         run_menu.addAction(self._clean_action)
 
-        settings_menu = menu_bar.addMenu("&Einstellungen")
-        preferences_action = QAction("Einstellungen...", self)
+        settings_menu = menu_bar.addMenu("&Settings")
+        preferences_action = QAction("Settings...", self)
         preferences_action.triggered.connect(self._open_settings_dialog)
         settings_menu.addAction(preferences_action)
 
-        help_menu = menu_bar.addMenu("&Hilfe")
-        about_action = QAction("Ueber GHDL Studio", self)
+        help_menu = menu_bar.addMenu("&Help")
+        about_action = QAction("About GHDL Studio", self)
         about_action.triggered.connect(self._show_about)
         help_menu.addAction(about_action)
 
     def _create_toolbar(self) -> None:
-        toolbar = QToolBar("Hauptleiste", self)
+        toolbar = QToolBar("Main toolbar", self)
         toolbar.addAction(self._analyze_action)
         toolbar.addAction(self._elaborate_action)
         toolbar.addAction(self._run_action)
@@ -211,9 +211,8 @@ class MainWindow(QMainWindow):
         self._top_unit_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         self._top_unit_combo.setMinimumWidth(220)
         self._top_unit_combo.setToolTip(
-            "Top-Level-Entity fuer Elaborate/Run. Klicke auf den Pfeil, um aus den "
-            "in den Projektdateien gefundenen VHDL-Entities auszuwaehlen, oder "
-            "tippe den Namen manuell ein."
+            "Top-level entity for Elaborate/Run. Click the arrow to choose from "
+            "VHDL entities found in the project files, or type the name manually."
         )
         if self._run_options.top_unit:
             self._top_unit_combo.addItem(self._run_options.top_unit)
@@ -221,19 +220,19 @@ class MainWindow(QMainWindow):
         self._top_unit_combo.currentTextChanged.connect(self._on_top_unit_changed)
 
         self._stop_time_edit = QLineEdit(self._run_options.stop_time or "", self)
-        self._stop_time_edit.setPlaceholderText("z. B. 200ns (optional)")
+        self._stop_time_edit.setPlaceholderText("e.g. 200ns (optional)")
         self._stop_time_edit.setMaximumWidth(140)
         self._stop_time_edit.setToolTip(
-            "Simulationsdauer fuer 'ghdl -r' (--stop-time=). Leer lassen, um bis "
-            "zum natuerlichen Ende der Simulation zu laufen."
+            "Simulation duration for 'ghdl -r' (--stop-time=). Leave empty to run "
+            "until the simulation ends naturally."
         )
         self._stop_time_edit.textChanged.connect(self._on_stop_time_changed)
 
-        sim_bar = QToolBar("Simulationseinstellungen", self)
+        sim_bar = QToolBar("Simulation settings", self)
         sim_bar.setObjectName("simulation_bar")
-        sim_bar.addWidget(QLabel(" Top-Level-Entity: ", self))
+        sim_bar.addWidget(QLabel(" Top-level entity: ", self))
         sim_bar.addWidget(self._top_unit_combo)
-        sim_bar.addWidget(QLabel("  Stop-Zeit: ", self))
+        sim_bar.addWidget(QLabel("  Stop time: ", self))
         sim_bar.addWidget(self._stop_time_edit)
         self.addToolBarBreak()
         self.addToolBar(sim_bar)
@@ -277,9 +276,9 @@ class MainWindow(QMainWindow):
     def _show_about(self) -> None:
         QMessageBox.about(
             self,
-            "Ueber GHDL Studio",
-            "GHDL Studio\n\nEine plattformunabhaengige Oberflaeche fuer den "
-            "VHDL-Simulator GHDL, entwickelt mit Python und PySide6.",
+            "About GHDL Studio",
+            "GHDL Studio\n\nA cross-platform interface for the "
+            "VHDL simulator GHDL, built with Python and PySide6.",
         )
 
     def _open_file_in_editor(self, path: str) -> None:
@@ -313,8 +312,8 @@ class MainWindow(QMainWindow):
         if isinstance(editor, CodeEditor) and editor.is_modified:
             answer = QMessageBox.question(
                 self,
-                "Ungespeicherte Aenderungen",
-                f"{Path(editor.file_path).name} wurde geaendert. Trotzdem schliessen?",
+                "Unsaved changes",
+                f"{Path(editor.file_path).name} has been modified. Close anyway?",
             )
             if answer != QMessageBox.StandardButton.Yes:
                 return
@@ -325,9 +324,9 @@ class MainWindow(QMainWindow):
         if not executable:
             QMessageBox.warning(
                 self,
-                "GHDL nicht gefunden",
-                "Es wurde keine GHDL-Executable konfiguriert. Bitte unter "
-                "'Einstellungen' den Pfad festlegen.",
+                "GHDL not found",
+                "No GHDL executable is configured. Please set the path under "
+                "'Settings'.",
             )
             return None
         return executable
@@ -350,13 +349,13 @@ class MainWindow(QMainWindow):
         vhdl_files = [f for f in all_files if is_vhdl_file(f)]
         verilog_files = [f for f in all_files if is_verilog_file(f)]
         if not vhdl_files:
-            QMessageBox.warning(self, "Keine VHDL-Dateien", "Bitte zuerst VHDL-Dateien hinzufuegen.")
+            QMessageBox.warning(self, "No VHDL files", "Please add VHDL files first.")
             return
         if verilog_files:
             names = ", ".join(Path(f).name for f in verilog_files)
             self._log_console.append_output(
-                "Hinweis: GHDL kann Verilog-Dateien nicht direkt analysieren/simulieren. "
-                f"Folgende Datei(en) werden bei 'Analyze' uebersprungen: {names}"
+                "Note: GHDL cannot analyse/simulate Verilog files directly. "
+                f"The following file(s) will be skipped during 'Analyze': {names}"
             )
         output_dir = self._ensure_output_dir()
         args = build_analyze_args(
@@ -370,7 +369,7 @@ class MainWindow(QMainWindow):
             return
         if not self._run_options.top_unit:
             QMessageBox.warning(
-                self, "Keine Top-Entity", "Bitte oben in der Werkzeugleiste eine Top-Level-Entity auswaehlen."
+                self, "No top entity", "Please select a top-level entity in the toolbar above."
             )
             return
         output_dir = self._ensure_output_dir()
@@ -385,7 +384,7 @@ class MainWindow(QMainWindow):
             return
         if not self._run_options.top_unit:
             QMessageBox.warning(
-                self, "Keine Top-Entity", "Bitte oben in der Werkzeugleiste eine Top-Level-Entity auswaehlen."
+                self, "No top entity", "Please select a top-level entity in the toolbar above."
             )
             return
         output_dir = self._ensure_output_dir()
@@ -414,8 +413,8 @@ class MainWindow(QMainWindow):
         if self._runner.is_running:
             QMessageBox.warning(
                 self,
-                "Simulation laeuft",
-                "Bitte zuerst die laufende Simulation stoppen, bevor bereinigt wird.",
+                "Simulation running",
+                "Please stop the running simulation before cleaning.",
             )
             return
 
@@ -432,13 +431,13 @@ class MainWindow(QMainWindow):
 
         if removed:
             self._log_console.append_success(
-                f"Bereinigt: {len(removed)} Eintrag/Eintraege aus '{output_dir}' entfernt "
+                f"Cleaned: removed {len(removed)} item(s) from '{output_dir}' "
                 f"({', '.join(removed)})."
             )
-            self._waveform_status_label.setText("Ausgabeverzeichnis bereinigt. Noch keine Simulation ausgefuehrt.")
+            self._waveform_status_label.setText("Output directory cleaned. No simulation has been run yet.")
         else:
             self._log_console.append_output(
-                f"Bereinigen: Ausgabeverzeichnis '{output_dir}' existiert nicht oder ist bereits leer."
+                f"Clean: output directory '{output_dir}' does not exist or is already empty."
             )
 
     def _on_command_started(self, command_text: str) -> None:
@@ -452,7 +451,7 @@ class MainWindow(QMainWindow):
 
     def _on_finished(self, exit_code: int, label: str) -> None:
         if exit_code == 0:
-            self._log_console.append_success(f"[{label}] erfolgreich beendet (exit code 0).")
+            self._log_console.append_success(f"[{label}] finished successfully (exit code 0).")
             if label == "Analyze":
                 self._run_elaborate()
             elif label == "Elaborate":
@@ -461,10 +460,10 @@ class MainWindow(QMainWindow):
                 self._try_load_waveform(self._pending_after_run)
                 self._pending_after_run = None
         else:
-            self._log_console.append_error(f"[{label}] beendet mit Fehlercode {exit_code}.")
+            self._log_console.append_error(f"[{label}] finished with error code {exit_code}.")
 
     def _on_failed_to_start(self, error: str) -> None:
-        self._log_console.append_error(f"GHDL konnte nicht gestartet werden: {error}")
+        self._log_console.append_error(f"GHDL could not be started: {error}")
 
     def _try_load_waveform(self, vcd_path: str) -> None:
         if not Path(vcd_path).exists():
@@ -472,7 +471,7 @@ class MainWindow(QMainWindow):
         try:
             data = parse_vcd(vcd_path)
         except Exception as exc:  # noqa: BLE001
-            self._log_console.append_error(f"VCD-Datei konnte nicht gelesen werden: {exc}")
+            self._log_console.append_error(f"Could not read VCD file: {exc}")
             return
 
         # Der interne Viewer wird immer sofort befuellt, damit unabhaengig
@@ -491,18 +490,18 @@ class MainWindow(QMainWindow):
         self._surfer_retry_button.setVisible(False)
 
         if not self._settings.surfer_integration_enabled:
-            self._waveform_status_label.setText("Wellenform-Anzeige: interner Viewer (Surfer-Integration deaktiviert).")
+            self._waveform_status_label.setText("Waveform display: internal viewer (Surfer integration disabled).")
             return
 
         surfer_executable = self._settings.surfer_executable
         if not surfer_executable:
             self._waveform_status_label.setText(
-                "Wellenform-Anzeige: interner Viewer (Surfer nicht gefunden - Pfad in den Einstellungen pruefen)."
+                "Waveform display: internal viewer (Surfer not found — check the path in Settings)."
             )
             return
 
         self._waveform_status_label.setText(
-            "Surfer wird gestartet und eingebettet... (kann einige Sekunden dauern)"
+            "Starting and embedding Surfer... (this may take a few seconds)"
         )
         self._surfer_embedder.start(surfer_executable, vcd_path, self._surfer_page)
 
@@ -531,17 +530,17 @@ class MainWindow(QMainWindow):
         resizer = getattr(container, "_ghdl_studio_resize_sync", None)
         if resizer is not None and hasattr(resizer, "_resize_child"):
             resizer._resize_child()
-        self._waveform_status_label.setText("Wellenform-Anzeige: Surfer (eingebettet).")
+        self._waveform_status_label.setText("Waveform display: Surfer (embedded).")
         self._surfer_retry_button.setVisible(False)
-        self._log_console.append_success("Surfer wurde erfolgreich in den Wellenformen-Tab eingebettet.")
+        self._log_console.append_success("Surfer was successfully embedded in the Waveforms tab.")
 
     def _on_surfer_failed(self, reason: str) -> None:
         self._clear_surfer_container()
         # Status sofort aktualisieren (nicht auf "wird gestartet..." stehen bleiben),
         # interner Viewer ist bereits geladen; Surfer kann parallel als Fenster offen sein.
         short = reason if len(reason) <= 180 else reason[:177] + "..."
-        self._waveform_status_label.setText(f"Wellenform-Anzeige: interner Viewer ({short})")
-        self._log_console.append_output(f"Surfer-Einbettung nicht verfuegbar: {reason}")
+        self._waveform_status_label.setText(f"Waveform display: internal viewer ({short})")
+        self._log_console.append_output(f"Surfer embedding unavailable: {reason}")
         self._waveform_stack.setCurrentIndex(_WAVEFORM_PAGE_INTERNAL)
         if self._settings.surfer_integration_enabled and self._settings.surfer_executable:
             self._surfer_retry_button.setVisible(True)

@@ -197,8 +197,8 @@ def ensure_linux_xcb_platform() -> None:
         if ok:
             if existing == "wayland":
                 print(
-                    "Hinweis: QT_QPA_PLATFORM=wayland war gesetzt, wechsle zu xcb "
-                    "(noetig fuer Surfer-Einbettung). Fuer Wayland: "
+                    "Note: QT_QPA_PLATFORM=wayland was set; switching to xcb "
+                    "(required for Surfer embedding). For Wayland: "
                     "export GHDL_STUDIO_PREFER_WAYLAND=1",
                     file=sys.stderr,
                 )
@@ -209,11 +209,11 @@ def ensure_linux_xcb_platform() -> None:
         ok, _ = probe_qt_platform("wayland")
         if ok:
             print(
-                "Hinweis: Qt-xcb ist nicht nutzbar — starte mit QT_QPA_PLATFORM=wayland.\n"
-                "Surfer-Einbettung ist dann nicht verfuegbar; interner Viewer bleibt aktiv.\n"
-                f"Fuer Einbettung wie unter Windows:\n  {apt_hint}\n"
-                "Danach: unset QT_QPA_PLATFORM && ghdl-studio\n"
-                + (f"xcb-Probe-Fehler: {xcb_err}\n" if xcb_err else "")
+                "Note: Qt-xcb is not usable — starting with QT_QPA_PLATFORM=wayland.\n"
+                "Surfer embedding is then unavailable; the internal viewer remains active.\n"
+                f"For embedding as on Windows:\n  {apt_hint}\n"
+                "Then: unset QT_QPA_PLATFORM && ghdl-studio\n"
+                + (f"xcb probe error: {xcb_err}\n" if xcb_err else "")
                 + "Debug: QT_DEBUG_PLUGINS=1 QT_QPA_PLATFORM=xcb python3 -c "
                 "\"from PySide6.QtWidgets import QApplication; QApplication([])\"",
                 file=sys.stderr,
@@ -222,9 +222,9 @@ def ensure_linux_xcb_platform() -> None:
             return
 
     print(
-        "Fehler: Weder Qt-xcb noch Qt-wayland konnten initialisiert werden.\n"
-        f"Tipp: {apt_hint}\n"
-        "Oder: export QT_QPA_PLATFORM=wayland",
+        "Error: Neither Qt-xcb nor Qt-wayland could be initialised.\n"
+        f"Tip: {apt_hint}\n"
+        "Or: export QT_QPA_PLATFORM=wayland",
         file=sys.stderr,
     )
     if existing == "xcb":
@@ -465,7 +465,7 @@ def _embed_foreign_window_x11_qt(xid: int, parent_widget: QWidget | None) -> QWi
     """
     foreign = QWindow.fromWinId(xid)
     if foreign is None:
-        raise OSError("QWindow.fromWinId lieferte None.")
+        raise OSError("QWindow.fromWinId returned None.")
     container = QWidget.createWindowContainer(foreign, parent_widget)
     container.setMinimumSize(QSize(200, 150))
     container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
@@ -484,13 +484,13 @@ def _embed_foreign_window_x11(xid: int, container: QWidget) -> None:
     platform = qt_platform_name()
     if platform and platform != "xcb":
         raise OSError(
-            f"Qt laeuft mit dem Platform-Plugin '{platform}', nicht 'xcb'. "
-            "X11-Einbettung von Surfer erfordert XCB."
+            f"Qt is running with the '{platform}' platform plugin, not 'xcb'. "
+            "X11 embedding of Surfer requires XCB."
         )
 
     container_xid = int(container.winId())
     if not container_xid:
-        raise OSError("Qt-Container besitzt keine X11-Window-ID (winId=0).")
+        raise OSError("Qt container has no X11 window ID (winId=0).")
 
     width, height = _container_embed_size(container)
     container.resize(width, height)
@@ -512,7 +512,7 @@ def _embed_foreign_window_x11(xid: int, container: QWidget) -> None:
                 child.map()
                 conn.sync()
         except XError as exc:
-            raise OSError(f"XReparentWindow fehlgeschlagen: {exc}") from exc
+            raise OSError(f"XReparentWindow failed: {exc}") from exc
     finally:
         try:
             conn.close()
@@ -686,11 +686,11 @@ def _embed_foreign_window_windows(hwnd: int, container: QWidget) -> None:
     ctypes.windll.kernel32.SetLastError(0)  # type: ignore[attr-defined]
 
     if not user32.IsWindow(hwnd):
-        raise OSError(f"Fenster-Handle {hwnd} ist ungueltig (Fenster bereits geschlossen?).")
+        raise OSError(f"Window handle {hwnd} is invalid (window already closed?).")
 
     container_hwnd = int(container.winId())
     if not container_hwnd:
-        raise OSError("Qt-Container besitzt kein natives Fenster-Handle.")
+        raise OSError("Qt container has no native window handle.")
 
     # Fensterstile immer ueber unsigned-32-Bit-Arithmetik berechnen und erst
     # danach auf signed LONG normieren - sonst OverflowError unter Win64.
@@ -767,20 +767,20 @@ class SurferEmbedder(QObject):
         self.stop()
 
         if not is_embedding_supported():
-            platform = qt_platform_name() or "unbekannt"
+            platform = qt_platform_name() or "unknown"
             if sys.platform.startswith("linux") and platform != "xcb":
                 self.failed.emit(
-                    f"Einbettung braucht Qt-xcb (aktuell: {platform}). "
-                    "Surfer wird als separates Fenster geoeffnet; interner Viewer bleibt aktiv. "
-                    "Fuer Einbettung wie unter Windows: X11-Deps installieren "
-                    "(libxcb-cursor0, libxkbcommon-x11-0, …) und ohne "
-                    "QT_QPA_PLATFORM=wayland neu starten."
+                    f"Embedding requires Qt-xcb (currently: {platform}). "
+                    "Surfer will open as a separate window; the internal viewer remains active. "
+                    "For embedding as on Windows: install the X11 dependencies "
+                    "(libxcb-cursor0, libxkbcommon-x11-0, …) and restart without "
+                    "QT_QPA_PLATFORM=wayland."
                 )
             else:
                 self.failed.emit(
-                    "Fenster-Einbettung wird auf dieser Plattform nicht unterstuetzt "
-                    "(nur Linux/X11 und Windows). Surfer wird als eigenstaendiges "
-                    "Fenster geoeffnet."
+                    "Window embedding is not supported on this platform "
+                    "(Linux/X11 and Windows only). Surfer will open as a "
+                    "standalone window."
                 )
             self._launch_standalone(surfer_executable, vcd_path)
             return
@@ -791,7 +791,7 @@ class SurferEmbedder(QObject):
         self._process.setProcessEnvironment(_surfer_process_environment())
         self._process.start(surfer_executable, [vcd_path])
         if not self._process.waitForStarted(5000):
-            self.failed.emit("Surfer konnte nicht gestartet werden. Ist Surfer installiert und im PATH?")
+            self.failed.emit("Surfer could not be started. Is Surfer installed and on the PATH?")
             self._process = None
             return
 
@@ -805,7 +805,7 @@ class SurferEmbedder(QObject):
     def _poll_for_window(self) -> None:
         if self._process is None or not self.is_running():
             self._timer.stop()
-            self.failed.emit("Surfer wurde beendet, bevor ein Fenster eingebettet werden konnte.")
+            self.failed.emit("Surfer exited before a window could be embedded.")
             return
 
         self._attempts += 1
@@ -826,19 +826,19 @@ class SurferEmbedder(QObject):
             self.failed.emit(self._build_timeout_reason())
 
     def _build_timeout_reason(self) -> str:
-        reason = "Surfer-Fenster wurde nicht rechtzeitig gefunden (Timeout)."
+        reason = "Surfer window was not found in time (timeout)."
         if sys.platform.startswith("linux"):
             if not is_xlib_available():
                 reason += (
-                    " Das Paket 'python-xlib' ist in dieser Python-Umgebung nicht installiert "
-                    "(z. B. mit 'pip install -r requirements.txt' im aktivierten venv nachinstallieren)."
+                    " The 'python-xlib' package is not installed in this Python environment "
+                    "(e.g. install it with 'pip install -r requirements.txt' in the activated venv)."
                 )
             else:
                 reason += (
-                    " 'python-xlib' ist installiert, das Fenster wurde aber trotzdem nicht "
-                    "gefunden. Surfer laeuft ggf. als Wayland-Fenster (nicht einbettbar) — "
-                    "dieser Start erzwingt WINIT_UNIX_BACKEND=x11. Bitte 'Erneut versuchen'; "
-                    "unter WSLg kann der Compositor auch etwas brauchen."
+                    " 'python-xlib' is installed, but the window was still not "
+                    "found. Surfer may be running as a Wayland window (not embeddable) — "
+                    "this launch forces WINIT_UNIX_BACKEND=x11. Please try 'Retry'; "
+                    "under WSLg the compositor may also need a moment."
                 )
         return reason
 
@@ -857,7 +857,7 @@ class SurferEmbedder(QObject):
             self._finish_embedding_linux(win_id)
             return
 
-        self.failed.emit("Fenster-Einbettung wird auf dieser Plattform nicht unterstuetzt.")
+        self.failed.emit("Window embedding is not supported on this platform.")
 
     def _finish_embedding_linux(self, win_id: int) -> None:
         """Linux: zuerst Qt-``createWindowContainer`` (besser fuer Surfer/wgpu),
@@ -871,8 +871,8 @@ class SurferEmbedder(QObject):
                 return
             except Exception as qt_exc:  # noqa: BLE001
                 print(
-                    f"Hinweis: createWindowContainer fehlgeschlagen ({qt_exc}); "
-                    "versuche XReparentWindow…",
+                    f"Note: createWindowContainer failed ({qt_exc}); "
+                    "trying XReparentWindow…",
                     file=sys.stderr,
                 )
 
@@ -898,10 +898,10 @@ class SurferEmbedder(QObject):
                     # Surfer (wgpu) bleibt nach XReparent unter WSLg oft schwarz.
                     # createWindowContainer wurde bereits versucht; Nutzer informieren.
                     print(
-                        "Hinweis: Unter WSL/XWayland kann eingebettetes Surfer leer wirken "
-                        "(GPU-Fenster). Falls der Tab leer bleibt: Surfer separat nutzen "
-                        "oder den internen Viewer — Einbettung funktioniert unter nativem "
-                        "Windows zuverlaessiger.",
+                        "Note: Under WSL/XWayland, embedded Surfer may appear blank "
+                        "(GPU window). If the tab stays empty: use Surfer separately "
+                        "or the internal viewer — embedding works more reliably under "
+                        "native Windows.",
                         file=sys.stderr,
                     )
         except Exception as exc:  # noqa: BLE001 - dem Nutzer die Ursache anzeigen
@@ -913,6 +913,6 @@ class SurferEmbedder(QObject):
             if resizer is not None and hasattr(resizer, "close_display"):
                 resizer.close_display()
             container.deleteLater()
-            self.failed.emit(f"Surfer-Fenster konnte nicht eingebettet werden: {exc}")
+            self.failed.emit(f"Surfer window could not be embedded: {exc}")
             return
         self.embedded.emit(container)

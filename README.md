@@ -1,163 +1,162 @@
 # GHDL Studio
 
-Eine plattformunabhängige grafische Oberfläche für [GHDL](https://ghdl.github.io/ghdl/),
-den quelloffenen VHDL-Simulator. Entwickelt mit **Python** und **PySide6** (Qt for Python),
-läuft GHDL Studio unverändert unter Linux, Windows und macOS.
+A cross-platform graphical interface for [GHDL](https://ghdl.github.io/ghdl/),
+the open-source VHDL simulator. Built with **Python** and **PySide6** (Qt for Python),
+GHDL Studio runs unchanged on Linux, Windows and macOS.
 
-Die Oberfläche nutzt auf **allen Betriebssystemen** ein einheitliches dunkles Theme
-(Fusion-Style + dunkle Palette), unabhängig vom System-Design.
+On **every operating system** the interface uses a consistent dark theme
+(Fusion style + dark palette), independent of the system appearance.
 
-## Funktionsumfang (aktueller Stand)
+## Features (current status)
 
-- Verwaltung von Quelldateien in einem Projekt (hinzufügen/entfernen), sowohl **VHDL**
-  (`.vhd`/`.vhdl`) als auch **Verilog/SystemVerilog** (`.v`/`.sv`) — Verilog-Dateien werden
-  farblich markiert und beim `Analyze`-Schritt übersprungen mit einem Hinweis in der
-  Log-Konsole, da GHDL ausschließlich VHDL analysieren/simulieren kann
-- Einfacher Code-Editor mit VHDL-Syntax-Highlighting zum Betrachten/Bearbeiten von Dateien
-- **Top-Level-Entity per Klick wählen**: eine Werkzeugleiste auf der Hauptseite zeigt eine
-  Combobox mit allen in den Projektdateien gefundenen VHDL-Entities (automatisch aktualisiert
-  bei Datei-Änderungen); alternativ kann der Name auch frei eingetippt werden
-- **Simulationszeit direkt auf der Hauptseite einstellbar** (Stop-Zeit-Feld in derselben
-  Werkzeugleiste, z. B. `200ns`), ohne den Einstellungsdialog öffnen zu müssen
-- Asynchrone Ausführung von GHDL-Kommandos über `QProcess` (blockiert die GUI nicht):
+- Manage source files in a project (add/remove), both **VHDL**
+  (`.vhd`/`.vhdl`) and **Verilog/SystemVerilog** (`.v`/`.sv`) — Verilog files are
+  colour-highlighted and skipped during the `Analyze` step with a note in the
+  log console, because GHDL can only analyse/simulate VHDL
+- Simple code editor with VHDL syntax highlighting for viewing/editing files
+- **Choose the top-level entity with a click**: a toolbar on the main window shows a
+  combo box of all VHDL entities found in the project files (updated automatically
+  when files change); you can also type the name freely
+- **Set the simulation stop time on the main window** (stop-time field in the same
+  toolbar, e.g. `200ns`), without opening the settings dialog
+- Asynchronous execution of GHDL commands via `QProcess` (does not block the GUI):
   - **Analyze** (`ghdl -a`)
   - **Elaborate** (`ghdl -e`)
-  - **Run** (`ghdl -r`), inklusive VCD- und GHW-Export (`--vcd=` / `--wave=`), Stop-Zeit und Generics
-  - Kombinierter Ablauf "Analyze + Elaborate + Run"
-- **Eigenes Ausgabeverzeichnis** (standardmäßig `output/`, konfigurierbar in den Einstellungen):
-  Analyze/Elaborate/Run laufen mit diesem Verzeichnis als Arbeitsverzeichnis, sodass Work-
-  Bibliothek (`work-obj*.cf`), Objektdateien (`*.o`), Waveform-Dumps (`*.vcd`/`*.ghw`), Coverage-Daten
-  (`*.gcda`/`*.gcno`) und die elaborierte Simulations-Executable dort landen statt das
-  Projekt-Wurzelverzeichnis zuzumüllen. Über "Simulation" → **"Bereinigen (Clean)"** (auch als
-  Toolbar-Button) lässt sich der Inhalt des Ausgabeverzeichnisses jederzeit wieder entfernen —
-  analog zu einem `clean`-Ziel in einem GHDL-Makefile
-- Live-Log-Konsole mit Farbkodierung (Befehl / Ausgabe / Fehler / Erfolg)
-- **Vollständig eingebettetes [Surfer](https://surfer-project.org/)** im Tab "Wellenformen":
-  Ist Surfer installiert, wird es nach jedem Simulationslauf automatisch gestartet und dessen
-  Fenster nativ in die GUI eingebettet. Die Einbettung funktioniert unter **Linux/X11**
-  (via `python-xlib` + `XReparentWindow`, inkl. vollständiger Fensterbaum-Suche; Start bevorzugt
-  mit Qt-Plugin `xcb`) und **Windows** (via WinAPI-`SetParent`). Auf anderen Plattformen bzw.
-  falls Surfer nicht gefunden/deaktiviert wird, greift automatisch ein **eingebauter
-  Wellenform-Viewer** als Fallback: eigener VCD-Parser mit digitalen Signalen, Bus-Werten
-  (als Hex), Zeitlineal sowie Zoom-In/Zoom-Fit/Zoom-Out
-- Einstellungsdialog für GHDL-Pfad und Surfer-Pfad (jeweils automatische Erkennung über `PATH`
-  oder manuelle Auswahl, Surfer-Integration ein-/ausschaltbar) sowie VHDL-Standard (87/93/00/02/08)
-- Konfigurierbare zusätzliche Flags für GHDL-Builds mit GCC-Backend, standardmäßig vorbelegt
-  und über den Einstellungsdialog anpassbar bzw. per Klick auf "Standard" zurücksetzbar:
+  - **Run** (`ghdl -r`), including VCD and GHW export (`--vcd=` / `--wave=`), stop time and generics
+  - Combined flow "Analyze + Elaborate + Run"
+- **Dedicated output directory** (default `output/`, configurable in Settings):
+  Analyze/Elaborate/Run run with this directory as the working directory, so the work
+  library (`work-obj*.cf`), object files (`*.o`), waveform dumps (`*.vcd`/`*.ghw`), coverage data
+  (`*.gcda`/`*.gcno`) and the elaborated simulation executable land there instead of
+  cluttering the project root. Via Simulation → **"Clean"** (also a
+  toolbar button) you can clear the output directory at any time —
+  similar to a `clean` target in a GHDL Makefile
+- Live log console with colour coding (command / output / error / success)
+- **Fully embedded [Surfer](https://surfer-project.org/)** in the "Waveforms" tab:
+  If Surfer is installed, it is started automatically after each simulation run and its
+  window is embedded natively in the GUI. Embedding works on **Linux/X11**
+  (via `python-xlib` + `XReparentWindow`, including a full window-tree search; start prefers
+  the Qt `xcb` plugin) and **Windows** (via WinAPI `SetParent`). On other platforms, or
+  if Surfer is not found/disabled, a built-in
+  **waveform viewer** is used as a fallback: a custom VCD parser with digital signals, bus values
+  (as hex), a time ruler, and Zoom In / Zoom Fit / Zoom Out
+- Settings dialog for the GHDL path and Surfer path (automatic detection via `PATH`
+  or manual selection; Surfer integration can be enabled/disabled) and the VHDL standard (87/93/00/02/08)
+- Configurable extra flags for GHDL builds with the GCC backend, pre-filled by default
+  and adjustable in the settings dialog or reset with "Default":
   - `ghdl -a`: `-Wc,-fprofile-arcs -Wc,-ftest-coverage -fsynopsys -fPIE`
   - `ghdl -e`: `-Wl,-lgcov -fsynopsys -fPIE`
   - `ghdl -r`: `-fsynopsys`
-- Einstellungen werden plattformübergreifend über `QSettings` persistiert
+- Settings are persisted across platforms via `QSettings`
 
-## Projektstruktur
+## Project layout
 
 ```
 src/ghdl_studio/
-├── app.py                 # Einstiegspunkt (QApplication + MainWindow)
-├── main_window.py          # Hauptfenster, verbindet alle Widgets
-├── ghdl_commands.py         # Reine Funktionen zum Bauen von GHDL-CLI-Argumenten (Qt-frei, testbar)
-├── ghdl_runner.py            # Asynchrone Prozessausführung über QProcess
-├── vcd_parser.py             # Minimaler VCD-Parser + Zeitformatierung (Qt-frei, testbar)
-├── vhdl_scanner.py            # Erkennung von VHDL-Entities/Verilog-Modulen (Qt-frei, testbar)
-├── surfer_embed.py             # Natives Einbetten des Surfer-Fensters (Linux/X11, Windows)
-├── theme.py                   # Dunkles Fusion-Theme (plattformuebergreifend)
-├── settings.py                # Persistente Einstellungen (QSettings)
+├── app.py                 # Entry point (QApplication + MainWindow)
+├── main_window.py          # Main window, wires all widgets together
+├── ghdl_commands.py         # Pure helpers to build GHDL CLI arguments (Qt-free, testable)
+├── ghdl_runner.py            # Asynchronous process execution via QProcess
+├── vcd_parser.py             # Minimal VCD parser + time formatting (Qt-free, testable)
+├── vhdl_scanner.py            # Detection of VHDL entities / Verilog modules (Qt-free, testable)
+├── surfer_embed.py             # Native embedding of the Surfer window (Linux/X11, Windows)
+├── theme.py                   # Dark Fusion theme (cross-platform)
+├── settings.py                # Persistent settings (QSettings)
 └── widgets/
-    ├── file_explorer.py       # Verwaltung der Projektdateien
-    ├── log_console.py          # Farbige Ausgabe-Konsole
-    ├── code_editor.py           # Texteditor für VHDL-Dateien
-    ├── vhdl_highlighter.py       # VHDL-Syntax-Highlighting
-    ├── waveform_viewer.py         # Fallback-Wellenform-Darstellung aus VCD-Daten inkl. Zeitlineal
-    └── run_settings_dialog.py     # Einstellungsdialog (GHDL-/Surfer-Pfad, Standard, Flags)
+    ├── file_explorer.py       # Project file management
+    ├── log_console.py          # Colour-coded output console
+    ├── code_editor.py           # Text editor for VHDL files
+    ├── vhdl_highlighter.py       # VHDL syntax highlighting
+    ├── waveform_viewer.py         # Fallback waveform view from VCD data, including time ruler
+    └── run_settings_dialog.py     # Settings dialog (GHDL/Surfer path, standard, flags)
 
-examples/counter/            # Beispiel: einfacher Zähler + Testbench
-tests/                        # Unit-Tests für die Qt-unabhängigen Module
+examples/counter/            # Example: simple counter + testbench
+tests/                        # Unit tests for the Qt-independent modules
 ```
 
-## Voraussetzungen
+## Requirements
 
-- Python 3.9 oder neuer
-- **Linux/WSL (Qt-xcb für Surfer-Einbettung):** zusätzlich
+- Python 3.9 or newer
+- **Linux/WSL (Qt-xcb for Surfer embedding):** additionally
   ```bash
   sudo apt install libxcb-cursor0
   ```
-  Ohne dieses Paket startet Qt 6.5+ mit dem xcb-Plugin nicht
-  (`xcb-cursor0 or libxcb-cursor0 is needed`). GHDL Studio versucht dann
-  ohne erzwungenes xcb zu starten (GUI läuft, Surfer-Einbettung ggf. nicht).
-- [GHDL](https://ghdl.github.io/ghdl/getting.html) muss installiert sein und im `PATH`
-  liegen (oder der Pfad wird in den Einstellungen der GUI manuell angegeben).
-  - Linux: über Paketmanager (z. B. `apt install ghdl`) oder von GitHub-Releases
-  - Windows: fertige Binärpakete von der [GHDL-Releases-Seite](https://github.com/ghdl/ghdl/releases)
-  - macOS: über [Homebrew](https://formulae.brew.sh/formula/ghdl) (`brew install ghdl`)
-- **Optional, aber empfohlen:** [Surfer](https://surfer-project.org/) für die vollwertige,
-  eingebettete Wellenform-Anzeige (siehe oben). Ohne Surfer funktioniert die GUI weiterhin
-  vollständig über den eingebauten Fallback-Viewer.
-  - **Empfohlen (ohne Rust/Cargo):** fertige Binaries laden.
-    Unter **Ubuntu 22.04 / WSL** bitte das **Rocky-Linux-Binary** nutzen — das normale
-    `surfer_linux_*.zip` braucht oft GLIBC ≥ 2.38/2.39 und startet dort nicht.
+  Without this package, Qt 6.5+ will not start with the xcb plugin
+  (`xcb-cursor0 or libxcb-cursor0 is needed`). GHDL Studio then tries
+  to start without forcing xcb (GUI runs; Surfer embedding may not).
+- [GHDL](https://ghdl.github.io/ghdl/getting.html) must be installed and on the `PATH`
+  (or set the path manually in the GUI settings).
+  - Linux: via the package manager (e.g. `apt install ghdl`) or from GitHub releases
+  - Windows: ready-made binary packages from the [GHDL releases page](https://github.com/ghdl/ghdl/releases)
+  - macOS: via [Homebrew](https://formulae.brew.sh/formula/ghdl) (`brew install ghdl`)
+- **Optional, but recommended:** [Surfer](https://surfer-project.org/) for the full
+  embedded waveform display (see above). Without Surfer the GUI still works
+  fully via the built-in fallback viewer.
+  - **Recommended (no Rust/Cargo):** download pre-built binaries.
+    On **Ubuntu 22.04 / WSL** please use the **Rocky Linux binary** — the normal
+    `surfer_linux_*.zip` often needs GLIBC ≥ 2.38/2.39 and will not start there.
     ```bash
     mkdir -p ~/.local/bin
     curl -L -o /tmp/surfer_linux_rocky.zip \
       "https://gitlab.com/api/v4/projects/42073614/jobs/artifacts/main/raw/surfer_linux_rocky.zip?job=rocky_build"
     unzip -o /tmp/surfer_linux_rocky.zip -d /tmp/surfer_extract
     install -m 755 /tmp/surfer_extract/surfer ~/.local/bin/surfer
-    # PATH dauerhaft setzen (falls noch nicht):
+    # Persist PATH if needed:
     grep -q '\$HOME/.local/bin' ~/.bashrc || echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
     source ~/.bashrc
     surfer --version
     ```
-    Neuere Distros (z. B. Ubuntu 24.04) können alternativ die Release-Zips von
-    [Surfer-Releases](https://gitlab.com/surfer-project/surfer/-/releases) nutzen
+    Newer distros (e.g. Ubuntu 24.04) can instead use the release zips from
+    [Surfer releases](https://gitlab.com/surfer-project/surfer/-/releases)
     (`surfer_linux_v*.zip`).
-    Windows: `surfer_win_*.zip` von derselben Seite entpacken und den Ordner mit
-    `surfer.exe` in den `PATH` aufnehmen bzw. in den GHDL-Studio-Einstellungen
-    den vollen Pfad eintragen.
-  - **Alternative aus Quellcode** (braucht Rust): zuerst
-    [rustup](https://rustup.rs/) installieren, danach
+    Windows: extract `surfer_win_*.zip` from the same page and add the folder containing
+    `surfer.exe` to `PATH`, or enter the full path in the GHDL Studio settings.
+  - **Alternative from source** (requires Rust): first install
+    [rustup](https://rustup.rs/), then
     `cargo install --git https://gitlab.com/surfer-project/surfer.git surfer`
-  - Unter Linux wird zusätzlich das Python-Paket `python-xlib` benötigt, um Surfer einzubetten
-    (wird automatisch mit `pip install -r requirements.txt` installiert)
-  - Weitere Details: [Surfer-Dokumentation](https://docs.surfer-project.org/book/)
+  - On Linux the Python package `python-xlib` is also required to embed Surfer
+    (installed automatically with `pip install -r requirements.txt`)
+  - Further details: [Surfer documentation](https://docs.surfer-project.org/book/)
 
-### Fehlerbehebung: Surfer-Einbettung
+### Troubleshooting: Surfer embedding
 
-Surfer öffnet sich dann zwar als **eigenständiges** Fenster (die Simulation ist nicht
-betroffen), wird aber nicht in den Tab "Wellenformen" eingebettet. Mögliche Ursachen:
+Surfer may open as a **standalone** window (the simulation is not
+affected) but is not embedded in the "Waveforms" tab. Possible causes:
 
-1. **Surfer nicht im PATH.** In den Einstellungen „Automatisch erkennen“ nutzen oder den
-   Pfad zur `surfer`-Executable manuell setzen.
-2. **`python-xlib` fehlt** (nur Linux). Im aktivierten venv
-   `pip install -r requirements.txt` erneut ausführen.
-3. **Langsamer Fenstermanager/Compositor** (z. B. unter WSLg): auf
-   „Surfer erneut versuchen“ klicken.
-4. **Surfer-Einbettung meldet `aktuell: wayland`:** Einbettung braucht Qt-xcb.
-   Oft steckt noch `export QT_QPA_PLATFORM=wayland` in der Shell (früherer Workaround).
+1. **Surfer not on PATH.** Use "Detect automatically" in Settings, or set the
+   path to the `surfer` executable manually.
+2. **`python-xlib` missing** (Linux only). In the activated venv run
+   `pip install -r requirements.txt` again.
+3. **Slow window manager/compositor** (e.g. under WSLg): click
+   "Retry Surfer".
+4. **Surfer embedding reports `currently: wayland`:** Embedding needs Qt-xcb.
+   Often `export QT_QPA_PLATFORM=wayland` is still set in the shell (an earlier workaround).
    ```bash
    sudo apt install libxcb-cursor0 libxcb-xinerama0 libxcb-icccm4 \
      libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-shape0 \
      libxcb-randr0 libxkbcommon-x11-0 libxcb-util1
    unset QT_QPA_PLATFORM
-   # xcb-Test (muss ohne Abbruch durchlaufen):
+   # xcb test (must run without aborting):
    QT_QPA_PLATFORM=xcb python3 -c "from PySide6.QtWidgets import QApplication; print(QApplication([]).platformName())"
    git pull origin cursor/ghdl-gui-pyside6-scaffold-85f1
    pip install -e .
    ghdl-studio
    ```
-   Die App bevorzugt xcb automatisch, sobald der Probe gelingt — auch wenn zuvor
-   `QT_QPA_PLATFORM=wayland` gesetzt war. Wayland erzwingen nur bei Bedarf mit
+   The app prefers xcb automatically once the probe succeeds — even if
+   `QT_QPA_PLATFORM=wayland` was set before. Force Wayland only if needed with
    `export GHDL_STUDIO_PREFER_WAYLAND=1`.
-5. **`platform plugin does not support foreign windows` (WSL/Wayland):** GHDL Studio setzt
-   beim Start automatisch `QT_QPA_PLATFORM=xcb`, sofern `libxcb-cursor` gefunden wird.
-   App komplett neu starten. Bei manuell gesetztem `QT_QPA_PLATFORM=wayland`:
-   vorübergehend `export QT_QPA_PLATFORM=xcb` (nach Installation von `libxcb-cursor0`).
-6. **Windows: Tab leer, Surfer bleibt extern:** Einbettung erfolgt per `SetParent` mit
-   korrekter 32-bit-`LONG`-Normierung — aktuellen Branch-Stand ziehen und erneut testen.
-7. **Linux/WSL: Status „Surfer (eingebettet)“, Tab aber leer:** Surfer ist eine GPU-App
-   (wgpu); nach `XReparentWindow` bleibt der Inhalt unter WSLg/XWayland oft schwarz.
-   Der aktuelle Stand nutzt unter xcb zuerst `QWindow.createWindowContainer`. Bitte
-   Branch ziehen und erneut testen. Bleibt der Tab leer, Surfer als separates Fenster
-   nutzen (interner Viewer zeigt die Wellen trotzdem) — unter nativem Windows ist die
-   Einbettung zuverlässiger.
+5. **`platform plugin does not support foreign windows` (WSL/Wayland):** At start, GHDL Studio
+   automatically sets `QT_QPA_PLATFORM=xcb` if `libxcb-cursor` is found.
+   Fully restart the app. If `QT_QPA_PLATFORM=wayland` is set manually:
+   temporarily `export QT_QPA_PLATFORM=xcb` (after installing `libxcb-cursor0`).
+6. **Windows: empty tab, Surfer stays external:** Embedding uses `SetParent` with
+   correct 32-bit `LONG` normalisation — pull the current branch and retest.
+7. **Linux/WSL: status "Surfer (embedded)", but empty tab:** Surfer is a GPU app
+   (wgpu); after `XReparentWindow` the content often stays black under WSLg/XWayland.
+   The current code prefers `QWindow.createWindowContainer` under xcb. Please
+   pull the branch and retest. If the tab stays empty, use Surfer as a separate window
+   (the internal viewer still shows the waves) — under native Windows,
+   embedding is more reliable.
 
 ## Installation
 
@@ -168,60 +167,60 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-Der letzte Schritt (`pip install -e .`) installiert das `ghdl_studio`-Paket selbst
-(editierbar, d. h. Änderungen am Quellcode wirken sofort) und ist **erforderlich**,
-damit `python -m ghdl_studio` bzw. der Befehl `ghdl-studio` funktionieren. Ohne diesen
-Schritt bricht der Start mit `No module named ghdl_studio` ab, da `requirements.txt`
-nur die Abhängigkeit PySide6 installiert, nicht das Projekt selbst.
+The last step (`pip install -e .`) installs the `ghdl_studio` package itself
+(editable, i.e. source changes take effect immediately) and is **required**
+for `python -m ghdl_studio` or the `ghdl-studio` command to work. Without it
+startup fails with `No module named ghdl_studio`, because `requirements.txt`
+only installs the PySide6 dependency, not the project itself.
 
-## Start
+## Launch
 
 ```bash
 python -m ghdl_studio
 ```
 
-oder, dank der editierbaren Installation:
+or, thanks to the editable install:
 
 ```bash
 ghdl-studio
 ```
 
-## Beispielprojekt ausprobieren
+## Try the example project
 
-1. GUI starten
-2. Über "Projektdateien" → "Datei hinzufügen..." die Dateien aus `examples/counter/`
-   (`counter.vhd`, `counter_tb.vhd`) hinzufügen
-3. In der Werkzeugleiste "Top-Level-Entity" auf den Dropdown-Pfeil klicken und
-   `counter_tb` auswählen (wird automatisch aus den Projektdateien erkannt);
-   optional im selben Bereich eine Stop-Zeit wie `200ns` eintragen
-4. Bei Bedarf in den Einstellungen den GHDL- und Surfer-Pfad prüfen (Button
-   "Automatisch erkennen")
-5. Menü "Simulation" → "Analyze + Elaborate + Run" ausführen
-6. Nach erfolgreichem Lauf wechselt die Ansicht automatisch zum Tab "Wellenformen": Ist
-   Surfer verfügbar, wird es automatisch eingebettet (kann einige Sekunden dauern, der
-   Status wird oberhalb der Wellenformen angezeigt); andernfalls erscheint sofort der
-   eingebaute Fallback-Viewer mit Zeitlineal und den simulierten Signalverläufen
+1. Start the GUI
+2. Via "Project files" → "Add file..." add the files from `examples/counter/`
+   (`counter.vhd`, `counter_tb.vhd`)
+3. In the toolbar click the "Top-level entity" drop-down arrow and
+   select `counter_tb` (detected automatically from the project files);
+   optionally enter a stop time such as `200ns` in the same area
+4. If needed, check the GHDL and Surfer paths in Settings (button
+   "Detect automatically")
+5. Menu "Simulation" → "Analyze + Elaborate + Run"
+6. After a successful run the view switches automatically to the "Waveforms" tab: if
+   Surfer is available it is embedded automatically (may take a few seconds; the
+   status is shown above the waveforms); otherwise the built-in fallback viewer
+   appears immediately with a time ruler and the simulated signal traces
 
-## Entwicklung & Tests
+## Development & tests
 
-Die Module `ghdl_commands.py` und `vcd_parser.py` enthalten keine Qt-Abhängigkeiten und
-sind vollständig mit `pytest` testbar (auch ohne installiertes GHDL):
+The modules `ghdl_commands.py` and `vcd_parser.py` have no Qt dependencies and
+are fully testable with `pytest` (even without GHDL installed):
 
 ```bash
 pip install -r requirements-dev.txt
 pytest
 ```
 
-## Architekturentscheidung: Python + PySide6
+## Design choice: Python + PySide6
 
-PySide6 (offizielle Qt-for-Python-Bindings) wurde gewählt, weil:
+PySide6 (the official Qt for Python bindings) was chosen because:
 
-- Qt auf Linux, Windows und macOS nativ aussieht und sich gleich verhält
-- `QProcess` eine nicht-blockierende, in die Event-Loop integrierte Prozesssteuerung bietet
-  (wichtig, da GHDL-Läufe je nach Simulationsdauer mehrere Sekunden dauern können)
-- Python die Entwicklung von Parsing-Logik (VCD, GHDL-Ausgaben) und GUI-Code stark beschleunigt
-- Die LGPL-Lizenz von PySide6 eine unkomplizierte Nutzung auch in proprietären Projekten erlaubt
+- Qt looks and behaves natively on Linux, Windows and macOS
+- `QProcess` provides non-blocking process control integrated into the event loop
+  (important because GHDL runs can take several seconds depending on simulation length)
+- Python speeds up development of parsing logic (VCD, GHDL output) and GUI code
+- The LGPL licence of PySide6 allows straightforward use in proprietary projects as well
 
-## Lizenz
+## Licence
 
-Siehe [LICENSE](LICENSE).
+See [LICENSE](LICENSE).
