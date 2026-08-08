@@ -26,6 +26,9 @@ def test_dark_stylesheet_mentions_core_widgets():
     assert "#1e1e1e" in sheet
     assert "QComboBox::down-arrow" in sheet
     assert "QComboBox::drop-down" in sheet
+    assert "combo_down_arrow.png" in sheet
+    # Qt braucht einen echten Dateipfad; data:-URIs fuer SVG werden oft ignoriert
+    assert "url(data:" not in sheet
 
 
 def test_apply_dark_theme_sets_fusion_and_stylesheet(qapp):

@@ -7,8 +7,16 @@ Oberflaeche unter Windows, Linux und macOS gleich aussieht.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from PySide6.QtGui import QColor, QPalette
 from PySide6.QtWidgets import QApplication
+
+
+def _combo_down_arrow_url() -> str:
+    """Dateipfad fuer den Combobox-Pfeil (Qt-QSS; Forward-Slashes)."""
+    arrow = Path(__file__).resolve().parent / "resources" / "combo_down_arrow.png"
+    return arrow.as_posix()
 
 # Farbpalette (VS-Code-/IDE-aehnliches Dunkelgrau)
 _BG_WINDOW = "#2b2b2b"
@@ -74,6 +82,7 @@ def build_dark_palette() -> QPalette:
 
 
 def dark_stylesheet() -> str:
+    arrow_url = _combo_down_arrow_url()
     return f"""
     QWidget {{
         color: {_FG};
@@ -209,10 +218,13 @@ def dark_stylesheet() -> str:
         background-color: {_BG_BUTTON_HOVER};
     }}
     QComboBox::down-arrow {{
-        width: 10px;
-        height: 7px;
-        /* Heller Chevron, damit die Combobox im dunklen Theme als Dropdown erkennbar ist */
-        image: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMiIgaGVpZ2h0PSI4IiB2aWV3Qm94PSIwIDAgMTIgOCI+PHBhdGggZmlsbD0iI2Q0ZDRkNCIgZD0iTTEgMS41bDUgNSA1LTV6Ii8+PC9zdmc+);
+        width: 14px;
+        height: 9px;
+        /* Datei statt data:-URI: Qt ignoriert SVG-Data-URIs in QSS oft */
+        image: url("{arrow_url}");
+    }}
+    QComboBox::down-arrow:on {{
+        image: url("{arrow_url}");
     }}
     QComboBox QAbstractItemView {{
         background-color: {_BG_ALT};
