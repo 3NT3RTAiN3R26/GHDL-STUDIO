@@ -1,4 +1,8 @@
+import os
 import shutil
+import subprocess
+import sys
+import time
 
 import pytest
 
@@ -6,8 +10,10 @@ QtWidgets = pytest.importorskip("PySide6.QtWidgets")
 
 from ghdl_studio.gtkwave_embed import (  # noqa: E402
     GtkWaveEmbedder,
+    _collect_descendant_pids,
     find_gtkwave_executable,
     is_embedding_supported,
+    is_xlib_available,
 )
 
 
@@ -44,3 +50,31 @@ def test_start_with_nonexistent_executable_emits_failed(qapp):
 def test_is_running_false_before_start():
     embedder = GtkWaveEmbedder()
     assert embedder.is_running() is False
+
+
+def test_is_xlib_available_matches_real_import():
+    import importlib.util
+
+    expected = importlib.util.find_spec("Xlib") is not None
+    assert is_xlib_available() is expected
+
+
+def test_collect_descendant_pids_includes_root_pid():
+    pids = _collect_descendant_pids(os.getpid())
+    assert os.getpid() in pids
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="/proc ist Linux-spezifisch")
+def test_collect_descendant_pids_finds_child_process():
+    # Startet einen Kindprozess, der kurz lebt, und prueft, dass seine PID
+    # als Nachkomme des aktuellen Prozesses gefunden wird (relevant fuer
+    # gtkwave-Wrapper-Skripte, die den eigentlichen GTK-Prozess forken statt
+    # sich per exec() selbst zu ersetzen).
+    child = subprocess.Popen(["sleep", "2"])
+    try:
+        time.sleep(0.2)
+        pids = _collect_descendant_pids(os.getpid())
+        assert child.pid in pids
+    finally:
+        child.kill()
+        child.wait()

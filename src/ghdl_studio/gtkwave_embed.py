@@ -4,10 +4,15 @@ GTKWave bietet keine offizielle Embedding-API. Dieses Modul realisiert die
 Einbettung ueber plattformspezifisches "Window Reparenting":
 
 - **Linux/X11**: GTKWave wird als Subprozess gestartet, anschliessend wird
-  dessen Top-Level-Fenster ueber die Prozess-ID mittels der EWMH-Properties
-  ``_NET_CLIENT_LIST``/``_NET_WM_PID`` gefunden (benoetigt das optionale
-  Paket ``python-xlib``) und per ``QWindow.fromWinId()`` /
-  ``QWidget.createWindowContainer()`` in die GUI eingebettet.
+  dessen Top-Level-Fenster gefunden (benoetigt das optionale Paket
+  ``python-xlib``) und per ``QWindow.fromWinId()`` /
+  ``QWidget.createWindowContainer()`` in die GUI eingebettet. Die Suche
+  versucht zuerst einen exakten Treffer ueber ``_NET_WM_PID`` gegen die
+  PID des gestarteten Prozesses *oder* eine seiner (rekursiven)
+  Kindprozess-PIDs (relevant, falls das gtkwave-Paket ueber ein
+  Wrapper-Skript startet, das den eigentlichen GTK-Prozess forkt statt
+  sich per exec() zu ersetzen); schlaegt das fehl, wird zusaetzlich ueber
+  ``WM_CLASS`` nach einem GTKWave-Fenster gesucht.
 - **Windows**: analoge Fenstersuche per WinAPI (``EnumWindows`` /
   ``GetWindowThreadProcessId``); zusaetzlich wird die Titelleiste des
   eingebetteten Fensters per ``SetWindowLong`` entfernt.
@@ -16,13 +21,15 @@ Einbettung ueber plattformspezifisches "Window Reparenting":
 
 Schlaegt die Einbettung fehl (GTKWave nicht installiert, Timeout beim
 Suchen des Fensters, nicht unterstuetzte Plattform, fehlendes
-``python-xlib`` unter Linux), wird dies ueber das ``failed``-Signal klar
-kommuniziert, sodass die aufrufende GUI auf einen alternativen
-Wellenform-Viewer zurueckfallen kann.
+``python-xlib`` unter Linux), wird dies ueber das ``failed``-Signal mit
+einer moeglichst konkreten Begruendung kommuniziert, sodass die
+aufrufende GUI auf einen alternativen Wellenform-Viewer zurueckfallen
+und dem Nutzer einen erneuten Versuch anbieten kann.
 """
 
 from __future__ import annotations
 
+import os
 import shutil
 import sys
 
@@ -31,7 +38,8 @@ from PySide6.QtGui import QWindow
 from PySide6.QtWidgets import QWidget
 
 _POLL_INTERVAL_MS = 300
-_MAX_POLL_ATTEMPTS = 30  # ~9 Sekunden Timeout, GTKWave kann etwas brauchen
+_MAX_POLL_ATTEMPTS = 60  # ~18 Sekunden Timeout - WSLg/langsamere Compositor koennen etwas brauchen
+_GTKWAVE_WM_CLASS_HINTS = ("gtkwave",)
 
 
 def find_gtkwave_executable() -> str | None:
@@ -44,13 +52,68 @@ def is_embedding_supported() -> bool:
     return sys.platform.startswith("linux") or sys.platform.startswith("win")
 
 
+def is_xlib_available() -> bool:
+    """Ob das optionale Paket ``python-xlib`` importierbar ist (nur Linux relevant)."""
+    import importlib.util
+
+    return importlib.util.find_spec("Xlib") is not None
+
+
+def _collect_descendant_pids(root_pid: int) -> set[int]:
+    """Sammelt ``root_pid`` und alle (rekursiven) Kindprozess-PIDs.
+
+    Notwendig, da manche gtkwave-Pakete ueber ein Wrapper-Skript gestartet
+    werden, das den eigentlichen GTK-Prozess per ``fork()`` als Kindprozess
+    erzeugt statt sich per ``exec()`` selbst zu ersetzen. In diesem Fall
+    stimmt die von ``QProcess`` gemeldete PID nicht mit der PID des
+    tatsaechlichen Fensters ueberein.
+    """
+    pids = {root_pid}
+    try:
+        children_by_ppid: dict[int, list[int]] = {}
+        for entry in os.listdir("/proc"):
+            if not entry.isdigit():
+                continue
+            try:
+                with open(f"/proc/{entry}/stat", encoding="utf-8", errors="replace") as stat_file:
+                    stat = stat_file.read()
+                # Format: "<pid> (<comm>) <state> <ppid> ...". comm kann
+                # Leerzeichen/Klammern enthalten, daher ab der letzten ")" parsen.
+                fields = stat[stat.rfind(")") + 2 :].split()
+                ppid = int(fields[1])
+                children_by_ppid.setdefault(ppid, []).append(int(entry))
+            except (OSError, ValueError, IndexError):
+                continue
+
+        frontier = [root_pid]
+        while frontier:
+            current = frontier.pop()
+            for child in children_by_ppid.get(current, []):
+                if child not in pids:
+                    pids.add(child)
+                    frontier.append(child)
+    except OSError:
+        pass
+    return pids
+
+
 def _find_window_id_for_pid_x11(pid: int):
     """Einmaliger (nicht-blockierender) Versuch, das Top-Level-Fenster eines
-    Prozesses unter X11 per EWMH-Properties zu finden. Gibt ``None`` zurueck,
-    falls ``python-xlib`` fehlt, keine X11-Verbindung moeglich ist oder das
-    Fenster (noch) nicht gefunden wurde."""
+    Prozesses (oder eines seiner Kindprozesse) unter X11 zu finden.
+
+    Zwei Strategien werden versucht, in dieser Reihenfolge:
+
+    1. Exakter Treffer ueber ``_NET_WM_PID`` gegen die PID des Prozesses
+       oder eine seiner (rekursiven) Kindprozess-PIDs.
+    2. Fallback ueber ``WM_CLASS``, falls kein PID-Treffer gefunden wurde
+       (z. B. weil der Fenstermanager ``_NET_WM_PID`` nicht setzt).
+
+    Gibt ``None`` zurueck, falls ``python-xlib`` fehlt, keine
+    X11-Verbindung moeglich ist oder das Fenster (noch) nicht gefunden
+    wurde.
+    """
     try:
-        from Xlib import X, display  # noqa: PLC0415 - optionale Abhaengigkeit
+        from Xlib import X, Xatom, display  # noqa: PLC0415 - optionale Abhaengigkeit
         from Xlib.error import XError
     except ImportError:
         return None
@@ -67,14 +130,27 @@ def _find_window_id_for_pid_x11(pid: int):
         client_list = root.get_full_property(net_client_list, X.AnyPropertyType)
         if not client_list or not client_list.value:
             return None
+
+        candidate_pids = _collect_descendant_pids(pid)
+        wm_class_fallback_win_id = None
+
         for win_id in client_list.value:
             try:
                 window = conn.create_resource_object("window", win_id)
                 prop = window.get_full_property(net_wm_pid, X.AnyPropertyType)
-                if prop and prop.value and int(prop.value[0]) == pid:
+                if prop and prop.value and int(prop.value[0]) in candidate_pids:
                     return int(win_id)
+                if wm_class_fallback_win_id is None:
+                    wm_class_prop = window.get_full_property(Xatom.WM_CLASS, X.AnyPropertyType)
+                    if wm_class_prop and wm_class_prop.value:
+                        raw = wm_class_prop.value
+                        text = raw.decode("latin-1", errors="ignore") if isinstance(raw, bytes) else str(raw)
+                        if any(hint in text.lower() for hint in _GTKWAVE_WM_CLASS_HINTS):
+                            wm_class_fallback_win_id = int(win_id)
             except XError:
                 continue
+
+        return wm_class_fallback_win_id
     except Exception:  # noqa: BLE001 - robust gegenueber jeglichen X11-Fehlern
         return None
     finally:
@@ -82,7 +158,6 @@ def _find_window_id_for_pid_x11(pid: int):
             conn.close()
         except Exception:  # noqa: BLE001
             pass
-    return None
 
 
 def _find_hwnd_for_pid_windows(pid: int):
@@ -205,10 +280,24 @@ class GtkWaveEmbedder(QObject):
 
         if self._attempts >= _MAX_POLL_ATTEMPTS:
             self._timer.stop()
-            reason = "GTKWave-Fenster wurde nicht rechtzeitig gefunden (Timeout)."
-            if sys.platform.startswith("linux"):
-                reason += " Ist das Paket 'python-xlib' installiert?"
-            self.failed.emit(reason)
+            self.failed.emit(self._build_timeout_reason())
+
+    def _build_timeout_reason(self) -> str:
+        reason = "GTKWave-Fenster wurde nicht rechtzeitig gefunden (Timeout)."
+        if sys.platform.startswith("linux"):
+            if not is_xlib_available():
+                reason += (
+                    " Das Paket 'python-xlib' ist in dieser Python-Umgebung nicht installiert "
+                    "(z. B. mit 'pip install -r requirements.txt' im aktivierten venv nachinstallieren)."
+                )
+            else:
+                reason += (
+                    " 'python-xlib' ist installiert, das Fenster wurde aber trotzdem nicht "
+                    "gefunden - moeglicherweise ist der Fenstermanager/Compositor "
+                    "(z. B. unter WSLg) zu langsam oder setzt die erwarteten X11-Eigenschaften "
+                    "nicht. Versuche es ggf. per Klick auf 'Erneut versuchen' noch einmal."
+                )
+        return reason
 
     def _finish_embedding(self, win_id: int) -> None:
         foreign_window = QWindow.fromWinId(win_id)
