@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import math
+
 from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import (
     QHBoxLayout,
+    QLabel,
     QListWidget,
     QListWidgetItem,
     QPushButton,
@@ -15,16 +18,37 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ghdl_gui.vcd_parser import VcdData, VcdSignal
+from ghdl_gui.vcd_parser import (
+    VcdData,
+    VcdSignal,
+    choose_time_unit,
+    format_femtoseconds_as,
+    raw_time_to_femtoseconds,
+)
 
 _ROW_HEIGHT = 28
+_RULER_HEIGHT = 22
 _LABEL_WIDTH = 160
 _TARGET_INITIAL_WIDTH_PX = 1200
+_TARGET_TICK_SPACING_PX = 90
 # GHDL benutzt standardmaessig eine Femtosekunden-Zeitbasis, wodurch Endzeiten
 # im Bereich von hunderten Millionen liegen koennen. Qt-Widgets erlauben
 # jedoch keine Groessen ueber QWIDGETSIZE_MAX (16777215), daher wird die
 # maximale Canvas-Breite hart begrenzt.
 _MAX_CANVAS_WIDTH_PX = 16_000_000
+
+
+def _nice_raw_step(raw_step_estimate: float) -> int:
+    """Rundet eine gewuenschte Zeitschrittweite auf einen "runden" 1/2/5-Wert."""
+    if raw_step_estimate <= 0:
+        return 1
+    exponent = math.floor(math.log10(raw_step_estimate))
+    base = 10**exponent
+    for multiple in (1, 2, 5, 10):
+        step = multiple * base
+        if step >= raw_step_estimate:
+            return max(1, int(round(step)))
+    return max(1, int(round(10 * base)))
 
 
 class _WaveformCanvas(QWidget):
@@ -58,7 +82,7 @@ class _WaveformCanvas(QWidget):
             return
         width = int(self._data.end_time * self._px_per_unit) + 40
         width = max(200, min(width, _MAX_CANVAS_WIDTH_PX))
-        height = max(1, len(self._visible_signals)) * _ROW_HEIGHT
+        height = _RULER_HEIGHT + max(1, len(self._visible_signals)) * _ROW_HEIGHT
         self.setMinimumSize(width, height)
         self.resize(self.minimumSize())
 
@@ -69,10 +93,12 @@ class _WaveformCanvas(QWidget):
             painter.end()
             return
 
+        self._draw_time_ruler(painter)
+
         grid_pen = QPen(QColor("#3c3c3c"))
         painter.setPen(grid_pen)
         for row in range(len(self._visible_signals) + 1):
-            y = row * _ROW_HEIGHT
+            y = _RULER_HEIGHT + row * _ROW_HEIGHT
             painter.drawLine(0, y, self.width(), y)
 
         signal_pen = QPen(QColor("#4ec9b0"))
@@ -82,7 +108,7 @@ class _WaveformCanvas(QWidget):
         painter.setFont(font)
 
         for row, signal in enumerate(self._visible_signals):
-            y_top = row * _ROW_HEIGHT
+            y_top = _RULER_HEIGHT + row * _ROW_HEIGHT
             y_mid = y_top + _ROW_HEIGHT // 2
             changes = self._data.changes.get(signal.identifier, [])
             if not changes:
@@ -94,6 +120,43 @@ class _WaveformCanvas(QWidget):
                 self._draw_bus_signal(painter, signal_pen, text_pen, font, changes, y_mid, y_top)
 
         painter.end()
+
+    def _draw_time_ruler(self, painter: QPainter) -> None:
+        assert self._data is not None
+        painter.fillRect(0, 0, self.width(), _RULER_HEIGHT, QColor("#252526"))
+        if self._px_per_unit <= 0:
+            return
+
+        raw_step = _nice_raw_step(_TARGET_TICK_SPACING_PX / self._px_per_unit)
+        total_height = _RULER_HEIGHT + max(1, len(self._visible_signals)) * _ROW_HEIGHT
+
+        # Eine einheitliche Zeiteinheit fuer die gesamte Achse waehlen (statt
+        # pro Beschriftung autoskaliert), damit z. B. nicht "0 s" neben
+        # "20 ns" steht.
+        axis_unit = choose_time_unit(raw_time_to_femtoseconds(raw_step, self._data.timescale))
+
+        tick_pen = QPen(QColor("#4a4a4a"))
+        text_pen = QPen(QColor("#9cdcfe"))
+        font = QFont("Consolas", 8)
+        painter.setFont(font)
+
+        time_value = 0
+        # Etwas ueber das Simulationsende hinaus zeichnen, damit die letzte
+        # Beschriftung nicht abgeschnitten wirkt.
+        end_time = self._data.end_time + raw_step
+        while time_value <= end_time:
+            x = int(time_value * self._px_per_unit)
+            painter.setPen(tick_pen)
+            painter.drawLine(x, 0, x, total_height)
+            painter.setPen(text_pen)
+            label = format_femtoseconds_as(
+                raw_time_to_femtoseconds(time_value, self._data.timescale), axis_unit
+            )
+            painter.drawText(x + 3, _RULER_HEIGHT - 6, label)
+            time_value += raw_step
+
+        painter.setPen(QPen(QColor("#5a5a5a")))
+        painter.drawLine(0, _RULER_HEIGHT - 1, self.width(), _RULER_HEIGHT - 1)
 
     def _draw_bit_signal(self, painter, pen, changes, y_top) -> None:
         painter.setPen(pen)
@@ -157,6 +220,19 @@ class WaveformViewer(QWidget):
         self._signal_list.setSelectionMode(QListWidget.SelectionMode.NoSelection)
         self._signal_list.itemChanged.connect(self._on_visibility_changed)
 
+        signal_header = QLabel("Signal", self)
+        signal_header.setFixedHeight(_RULER_HEIGHT)
+        signal_header.setStyleSheet(
+            "QLabel { background-color: #252526; color: #9cdcfe; padding-left: 4px; }"
+        )
+        left_layout = QVBoxLayout()
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(0)
+        left_layout.addWidget(signal_header)
+        left_layout.addWidget(self._signal_list)
+        left_container = QWidget(self)
+        left_container.setLayout(left_layout)
+
         self._scroll_area = QScrollArea(self)
         self._scroll_area.setWidgetResizable(False)
         self._canvas = _WaveformCanvas()
@@ -179,7 +255,7 @@ class WaveformViewer(QWidget):
         right_container.setLayout(right_layout)
 
         splitter = QSplitter(self)
-        splitter.addWidget(self._signal_list)
+        splitter.addWidget(left_container)
         splitter.addWidget(right_container)
         splitter.setSizes([_LABEL_WIDTH, 600])
 
