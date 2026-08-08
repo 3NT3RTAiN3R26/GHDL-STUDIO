@@ -4,16 +4,16 @@ from __future__ import annotations
 
 import math
 
-from PySide6.QtCore import QRectF, Qt
-from PySide6.QtGui import QColor, QFont, QPainter, QPen
+from PySide6.QtCore import QPointF, QRectF, QSize, Qt
+from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QListWidget,
     QListWidgetItem,
-    QPushButton,
     QScrollArea,
     QSplitter,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -36,6 +36,42 @@ _TARGET_TICK_SPACING_PX = 90
 # jedoch keine Groessen ueber QWIDGETSIZE_MAX (16777215), daher wird die
 # maximale Canvas-Breite hart begrenzt.
 _MAX_CANVAS_WIDTH_PX = 16_000_000
+
+
+def _create_magnifier_icon(symbol: str | None, size: int = 20) -> QIcon:
+    """Zeichnet ein Lupen-Icon (optional mit '+'/'-') plattformunabhaengig
+    per QPainter, statt sich auf ein systemabhaengiges Icon-Theme zu
+    verlassen (die freedesktop-Icon-Namen 'zoom-in'/'zoom-out' sind unter
+    Windows/macOS nicht garantiert verfuegbar)."""
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.GlobalColor.transparent)
+
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    pen = QPen(QColor("#3c3c3c"))
+    pen.setWidthF(1.6)
+    painter.setPen(pen)
+
+    lens_diameter = size * 0.62
+    lens_rect = QRectF(size * 0.03, size * 0.03, lens_diameter, lens_diameter)
+    painter.drawEllipse(lens_rect)
+
+    handle_start = QPointF(
+        lens_rect.center().x() + lens_diameter / 2 * 0.75,
+        lens_rect.center().y() + lens_diameter / 2 * 0.75,
+    )
+    handle_end = QPointF(size - size * 0.06, size - size * 0.06)
+    painter.drawLine(handle_start, handle_end)
+
+    if symbol in ("+", "-"):
+        center = lens_rect.center()
+        half = lens_diameter * 0.26
+        painter.drawLine(QPointF(center.x() - half, center.y()), QPointF(center.x() + half, center.y()))
+        if symbol == "+":
+            painter.drawLine(QPointF(center.x(), center.y() - half), QPointF(center.x(), center.y() + half))
+
+    painter.end()
+    return QIcon(pixmap)
 
 
 def _nice_raw_step(raw_step_estimate: float) -> int:
@@ -238,13 +274,29 @@ class WaveformViewer(QWidget):
         self._canvas = _WaveformCanvas()
         self._scroll_area.setWidget(self._canvas)
 
-        zoom_in = QPushButton("Zoom +", self)
-        zoom_out = QPushButton("Zoom -", self)
+        icon_size = QSize(20, 20)
+
+        zoom_in = QToolButton(self)
+        zoom_in.setIcon(_create_magnifier_icon("+"))
+        zoom_in.setIconSize(icon_size)
+        zoom_in.setToolTip("Vergroessern (Zoom +)")
         zoom_in.clicked.connect(lambda: self._canvas.set_zoom(self._canvas._px_per_unit * 1.5))
+
+        zoom_fit = QToolButton(self)
+        zoom_fit.setIcon(_create_magnifier_icon(None))
+        zoom_fit.setIconSize(icon_size)
+        zoom_fit.setToolTip("Gesamte Simulation einpassen (Zoom Fit)")
+        zoom_fit.clicked.connect(self._on_zoom_fit)
+
+        zoom_out = QToolButton(self)
+        zoom_out.setIcon(_create_magnifier_icon("-"))
+        zoom_out.setIconSize(icon_size)
+        zoom_out.setToolTip("Verkleinern (Zoom -)")
         zoom_out.clicked.connect(lambda: self._canvas.set_zoom(self._canvas._px_per_unit / 1.5))
 
         toolbar = QHBoxLayout()
         toolbar.addWidget(zoom_in)
+        toolbar.addWidget(zoom_fit)
         toolbar.addWidget(zoom_out)
         toolbar.addStretch(1)
 
@@ -278,6 +330,14 @@ class WaveformViewer(QWidget):
 
     def _on_visibility_changed(self, _item: QListWidgetItem) -> None:
         self._refresh_canvas()
+
+    def _on_zoom_fit(self) -> None:
+        """Passt den Zoom so an, dass die gesamte Simulation in die aktuell
+        sichtbare Breite des Wellenform-Bereichs passt."""
+        if not self._data or self._data.end_time <= 0:
+            return
+        available_width = max(self._scroll_area.viewport().width() - 40, 50)
+        self._canvas.set_zoom(available_width / self._data.end_time)
 
     def _refresh_canvas(self) -> None:
         visible: list[VcdSignal] = []
