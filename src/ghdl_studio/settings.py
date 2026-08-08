@@ -17,7 +17,11 @@ from ghdl_studio.ghdl_commands import (
     DEFAULT_STD,
     find_ghdl_executable,
 )
-from ghdl_studio.osvvm_commands import MODE_NORMAL, find_tclsh_executable
+from ghdl_studio.osvvm_commands import (
+    DEFAULT_OSVVM_HTML_REPORT,
+    MODE_NORMAL,
+    find_tclsh_executable,
+)
 from ghdl_studio.surfer_embed import find_surfer_executable
 
 ORG_NAME = "GhdlStudio"
@@ -203,3 +207,14 @@ class AppSettings:
     @osvvm_scripts_path.setter
     def osvvm_scripts_path(self, value: str) -> None:
         self._set("osvvm_scripts_path", value)
+
+    @property
+    def osvvm_html_report(self) -> str:
+        """HTML report path shown after OSVVM Build (relative to the .pro dir)."""
+        stored = self._settings.value("osvvm_html_report", DEFAULT_OSVVM_HTML_REPORT, str)
+        return (stored or DEFAULT_OSVVM_HTML_REPORT).strip() or DEFAULT_OSVVM_HTML_REPORT
+
+    @osvvm_html_report.setter
+    def osvvm_html_report(self, value: str) -> None:
+        normalised = (value or "").strip() or DEFAULT_OSVVM_HTML_REPORT
+        self._set("osvvm_html_report", normalised)

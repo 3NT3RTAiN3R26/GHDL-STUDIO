@@ -45,6 +45,7 @@ from ghdl_studio.osvvm_commands import (
     find_recent_waveform,
     find_tclsh_executable,
     prepare_osvvm_run,
+    resolve_osvvm_html_report,
     resolve_startup_tcl,
 )
 from ghdl_studio.surfer_embed import SurferEmbedder
@@ -58,6 +59,7 @@ from ghdl_studio.vhdl_scanner import (
 )
 from ghdl_studio.widgets.code_editor import CodeEditor
 from ghdl_studio.widgets.file_explorer import FileExplorer
+from ghdl_studio.widgets.html_report_view import HtmlReportView
 from ghdl_studio.widgets.log_console import LogConsole, is_osvvm_transcript_line
 from ghdl_studio.widgets.run_settings_dialog import RunSettingsDialog
 from ghdl_studio.widgets.startup_mode_dialog import StartupModeDialog
@@ -144,6 +146,9 @@ class MainWindow(QMainWindow):
         self._editor_tabs.setTabsClosable(True)
         self._editor_tabs.tabCloseRequested.connect(self._close_editor_tab)
 
+        self._html_report_view = HtmlReportView(self)
+        self._osvvm_report_tab_index = -1
+
         self._central_tabs = QTabWidget(self)
         self._central_tabs.addTab(self._editor_tabs, "Editor")
         self._central_tabs.addTab(self._waveform_tab, "Waveforms")
@@ -206,6 +211,10 @@ class MainWindow(QMainWindow):
         self._build_pro_action.triggered.connect(self._start_osvvm_build)
         run_menu.addAction(self._build_pro_action)
 
+        self._open_html_report_action = QAction("Open OSVVM HTML report", self)
+        self._open_html_report_action.triggered.connect(self._open_osvvm_html_report)
+        run_menu.addAction(self._open_html_report_action)
+
         self._all_action = QAction("Analyze + Elaborate + Run", self)
         self._all_action.triggered.connect(self._run_full_flow)
         run_menu.addAction(self._all_action)
@@ -254,12 +263,15 @@ class MainWindow(QMainWindow):
         self._run_action.setVisible(not osvvm)
         self._all_action.setVisible(not osvvm)
         self._build_pro_action.setVisible(osvvm)
+        self._open_html_report_action.setVisible(osvvm)
         self._add_files_action.setEnabled(not osvvm)
         # Always allow opening a .pro (switches into OSVVM mode).
         self._open_pro_action.setEnabled(True)
         self._file_explorer.setEnabled(not osvvm)
         if hasattr(self, "_simulation_bar"):
             self._simulation_bar.setVisible(not osvvm)
+        if not osvvm:
+            self._hide_osvvm_report_tab()
 
         if osvvm:
             name = Path(self._pro_path).name if self._pro_path else "(no .pro)"
@@ -799,6 +811,7 @@ class MainWindow(QMainWindow):
                 self._pending_after_run = None
             elif label == "OSVVM Build":
                 self._try_load_osvvm_waveform()
+                self._open_osvvm_html_report()
             if self._pending_chain:
                 next_step = self._pending_chain.pop(0)
                 if next_step == "Elaborate":
@@ -829,6 +842,50 @@ class MainWindow(QMainWindow):
             return
         self._log_console.append_output(f"Opening waveform from OSVVM run: {wave}")
         self._try_load_waveform(wave)
+
+    def _osvvm_html_report_path(self) -> Path | None:
+        if not self._pro_path:
+            return None
+        return resolve_osvvm_html_report(
+            self._pro_path,
+            self._settings.osvvm_html_report,
+        )
+
+    def _ensure_osvvm_report_tab(self) -> None:
+        index = self._central_tabs.indexOf(self._html_report_view)
+        if index < 0:
+            index = self._central_tabs.addTab(self._html_report_view, "OSVVM Report")
+        self._osvvm_report_tab_index = index
+
+    def _hide_osvvm_report_tab(self) -> None:
+        index = self._central_tabs.indexOf(self._html_report_view)
+        if index >= 0:
+            self._central_tabs.removeTab(index)
+        self._osvvm_report_tab_index = -1
+
+    def _open_osvvm_html_report(self) -> None:
+        """Load the configured OSVVM HTML report into a central tab."""
+        if self._mode != MODE_OSVVM:
+            return
+        report = self._osvvm_html_report_path()
+        if report is None:
+            QMessageBox.warning(
+                self,
+                "No .pro file",
+                "Open an OSVVM .pro file first (File → Open .pro…).",
+            )
+            return
+        self._ensure_osvvm_report_tab()
+        if self._html_report_view.load_file(str(report)):
+            self._log_console.append_output(f"OSVVM HTML report: {report}")
+            self._central_tabs.setCurrentWidget(self._html_report_view)
+        else:
+            self._log_console.append_output(
+                f"OSVVM HTML report not found at '{report}'. "
+                "Set Settings → OSVVM HTML report (e.g. build_all/build_all.html) "
+                "to match your .pro output, then use Simulation → "
+                "Open OSVVM HTML report."
+            )
 
     def _on_failed_to_start(self, error: str) -> None:
         self._pending_chain = []

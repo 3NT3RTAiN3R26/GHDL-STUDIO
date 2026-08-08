@@ -28,7 +28,11 @@ from ghdl_studio.ghdl_commands import (
     find_ghdl_executable,
     get_ghdl_version,
 )
-from ghdl_studio.osvvm_commands import find_tclsh_executable, resolve_startup_tcl
+from ghdl_studio.osvvm_commands import (
+    DEFAULT_OSVVM_HTML_REPORT,
+    find_tclsh_executable,
+    resolve_startup_tcl,
+)
 from ghdl_studio.surfer_embed import find_surfer_executable, is_embedding_supported
 from ghdl_studio.settings import AppSettings
 
@@ -114,6 +118,24 @@ class RunSettingsDialog(QDialog):
         osvvm_scripts_row.addWidget(self._osvvm_scripts_edit)
         osvvm_scripts_row.addWidget(osvvm_scripts_browse_button)
 
+        self._osvvm_html_edit = QLineEdit(settings.osvvm_html_report, self)
+        self._osvvm_html_edit.setPlaceholderText(DEFAULT_OSVVM_HTML_REPORT)
+        self._osvvm_html_edit.setToolTip(
+            "OSVVM mode: HTML report opened in a new tab after Build .pro. "
+            "Relative paths are resolved against the directory of the .pro file "
+            f"(default: {DEFAULT_OSVVM_HTML_REPORT})."
+        )
+        osvvm_html_browse_button = QPushButton("Browse...", self)
+        osvvm_html_browse_button.clicked.connect(self._on_browse_osvvm_html)
+        osvvm_html_reset_button = QPushButton("Default", self)
+        osvvm_html_reset_button.clicked.connect(
+            lambda: self._osvvm_html_edit.setText(DEFAULT_OSVVM_HTML_REPORT)
+        )
+        osvvm_html_row = QHBoxLayout()
+        osvvm_html_row.addWidget(self._osvvm_html_edit)
+        osvvm_html_row.addWidget(osvvm_html_browse_button)
+        osvvm_html_row.addWidget(osvvm_html_reset_button)
+
         self._custom_lib_edit = QLineEdit(run_options.custom_lib_path or settings.custom_lib_path, self)
         self._custom_lib_edit.setPlaceholderText("Directory with other precompiled GHDL libraries")
         self._custom_lib_edit.setToolTip(
@@ -195,6 +217,7 @@ class RunSettingsDialog(QDialog):
         form.addRow("OSVVM lib path (-P):", osvvm_lib_row)
         form.addRow("TCL executable:", tcl_path_row)
         form.addRow("OSVVM Scripts path:", osvvm_scripts_row)
+        form.addRow("OSVVM HTML report:", osvvm_html_row)
         form.addRow("Custom lib path:", custom_lib_row)
         form.addRow("Surfer executable:", surfer_path_row)
         form.addRow("", self._surfer_enabled_check)
@@ -273,6 +296,16 @@ class RunSettingsDialog(QDialog):
                     "(or Scripts/StartUp.tcl). Check the path.",
                 )
 
+    def _on_browse_osvvm_html(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select OSVVM HTML report",
+            "",
+            "HTML (*.html *.htm);;All files (*)",
+        )
+        if path:
+            self._osvvm_html_edit.setText(path)
+
     def _on_browse_custom_lib(self) -> None:
         directory = QFileDialog.getExistingDirectory(self, "Select custom library directory")
         if directory:
@@ -334,6 +367,7 @@ class RunSettingsDialog(QDialog):
         self._settings.osvvm_lib_path = osvvm_lib_path
         self._settings.tcl_executable = self._tcl_path_edit.text().strip()
         self._settings.osvvm_scripts_path = self._osvvm_scripts_edit.text().strip()
+        self._settings.osvvm_html_report = self._osvvm_html_edit.text().strip()
         custom_lib_path = self._custom_lib_edit.text().strip()
         self._run_options.custom_lib_path = custom_lib_path
         self._settings.custom_lib_path = custom_lib_path

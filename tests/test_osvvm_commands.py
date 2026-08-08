@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from ghdl_studio.osvvm_commands import (
+    DEFAULT_OSVVM_HTML_REPORT,
     MODE_NORMAL,
     MODE_OSVVM,
     STUDIO_MODES,
@@ -8,6 +9,7 @@ from ghdl_studio.osvvm_commands import (
     find_recent_waveform,
     is_pro_file,
     prepare_osvvm_run,
+    resolve_osvvm_html_report,
     resolve_startup_tcl,
     tcl_quote,
 )
@@ -74,6 +76,25 @@ def test_prepare_osvvm_run_writes_batch_script(tmp_path):
     assert Path(plan.script_path).is_file()
     text = Path(plan.script_path).read_text(encoding="utf-8")
     assert "source" in text and "build" in text
+
+
+def test_resolve_osvvm_html_report_default_relative(tmp_path):
+    pro = tmp_path / "proj" / "run.pro"
+    pro.parent.mkdir()
+    pro.write_text("#\n", encoding="utf-8")
+    resolved = resolve_osvvm_html_report(str(pro))
+    assert resolved == (pro.parent / DEFAULT_OSVVM_HTML_REPORT).resolve()
+    assert DEFAULT_OSVVM_HTML_REPORT == "build_all/build_all.html"
+
+
+def test_resolve_osvvm_html_report_custom_and_absolute(tmp_path):
+    pro = tmp_path / "run.pro"
+    pro.write_text("#\n", encoding="utf-8")
+    relative = resolve_osvvm_html_report(str(pro), "reports/summary.html")
+    assert relative == (tmp_path / "reports" / "summary.html").resolve()
+    absolute = tmp_path / "elsewhere" / "out.html"
+    resolved_abs = resolve_osvvm_html_report(str(pro), str(absolute))
+    assert resolved_abs == absolute.resolve()
 
 
 def test_find_recent_waveform_prefers_newest(tmp_path):

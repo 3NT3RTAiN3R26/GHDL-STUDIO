@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 
 from ghdl_studio.main_window import MainWindow
@@ -42,7 +43,14 @@ def main() -> int:
     # Vor QApplication: unter Linux/WSL XCB bevorzugen (wenn libxcb-cursor
     # vorhanden), damit Surfer per X11-Reparenting eingebettet werden kann.
     ensure_linux_xcb_platform()
+    # Required by Qt WebEngine when embedding OSVVM HTML reports.
+    QApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts, True)
     try:
+        # Import WebEngine before QApplication when available (Chromium init).
+        try:
+            from PySide6.QtWebEngineWidgets import QWebEngineView  # noqa: F401
+        except ImportError:
+            pass
         app = QApplication(sys.argv)
     except Exception as exc:  # noqa: BLE001 - Qt kann hier auch hart abbrechen
         print(f"GHDL Studio could not start: {exc}", file=sys.stderr)

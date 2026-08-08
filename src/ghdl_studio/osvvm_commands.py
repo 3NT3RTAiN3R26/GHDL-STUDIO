@@ -24,6 +24,10 @@ STUDIO_MODES = (MODE_NORMAL, MODE_OSVVM)
 
 STARTUP_TCL_NAME = "StartUp.tcl"
 
+# Default HTML report path relative to the directory that contains the .pro
+# file (common OSVVM project layout). Override in Settings.
+DEFAULT_OSVVM_HTML_REPORT = "build_all/build_all.html"
+
 
 def find_tclsh_executable() -> str | None:
     """Return the path to ``tclsh`` (or ``tclsh86`` / ``tclsh8.6``) if on PATH."""
@@ -64,6 +68,24 @@ def resolve_startup_tcl(scripts_or_libraries_path: str) -> Path | None:
 def is_pro_file(path: str) -> bool:
     """Return True for OSVVM project script files (``.pro``)."""
     return Path(path).suffix.lower() == ".pro"
+
+
+def resolve_osvvm_html_report(
+    pro_file: str,
+    report_path: str | None = None,
+) -> Path:
+    """Resolve the OSVVM HTML report path for a ``.pro`` session.
+
+    Relative ``report_path`` values are resolved against the directory that
+    contains ``pro_file``. Absolute paths are returned as-is. Empty
+    ``report_path`` uses :data:`DEFAULT_OSVVM_HTML_REPORT`.
+    """
+    configured = (report_path or "").strip() or DEFAULT_OSVVM_HTML_REPORT
+    candidate = Path(configured).expanduser()
+    if candidate.is_absolute():
+        return candidate
+    base = Path(pro_file).expanduser().resolve().parent
+    return (base / candidate).resolve()
 
 
 def build_osvvm_batch_script(startup_tcl: str, pro_file: str) -> str:
