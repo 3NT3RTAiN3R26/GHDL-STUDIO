@@ -131,8 +131,17 @@ betroffen), wird aber nicht in den Tab "Wellenformen" eingebettet. Mögliche Urs
 3. **Langsamer Fenstermanager/Compositor** (z. B. unter WSLg): auf
    „Surfer erneut versuchen“ klicken.
 4. **App startet nicht: `libxcb-cursor0 is needed` / xcb-Plugin:**  
-   `sudo apt install libxcb-cursor0`, danach neu starten. Für Surfer-Einbettung
-   wird xcb benötigt.
+   ```bash
+   sudo apt update
+   sudo apt install libxcb-cursor0
+   # falls QT_QPA_PLATFORM=xcb in der Shell steht:
+   unset QT_QPA_PLATFORM
+   git pull origin cursor/ghdl-gui-pyside6-scaffold-85f1
+   pip install -e .
+   ghdl-studio
+   ```
+   Für Surfer-Einbettung wie unter Windows wird `libxcb-cursor0` + xcb benötigt.
+   Ohne das Paket startet die aktuelle Version unter WSL mit Wayland (ohne Einbettung).
 5. **`platform plugin does not support foreign windows` (WSL/Wayland):** GHDL Studio setzt
    beim Start automatisch `QT_QPA_PLATFORM=xcb`, sofern `libxcb-cursor` gefunden wird.
    App komplett neu starten. Bei manuell gesetztem `QT_QPA_PLATFORM=wayland`:

@@ -79,33 +79,60 @@ def is_xcb_cursor_available() -> bool:
 
 
 def ensure_linux_xcb_platform() -> None:
-    """Bevorzugt das Qt-``xcb``-Plugin unter Linux, sofern der Nutzer nichts
-    anderes gesetzt hat, ein X11-/XWayland-``DISPLAY`` vorhanden ist und
-    die noetige ``libxcb-cursor``-Bibliothek installiert ist.
+    """Waehlt ein sicheres Qt-Platform-Plugin unter Linux *vor* ``QApplication``.
 
-    Muss *vor* der Erzeugung von ``QApplication`` aufgerufen werden. Ohne
-    XCB (typisch: Qt waehlt unter WSLg/Wayland-Sessions ``wayland``) ist
-    X11-Reparenting von Surfer in ein Qt-Widget nicht moeglich. Fehlt
-    dagegen ``libxcb-cursor``, wuerde ein erzwungenes ``xcb`` den Start
-    komplett abbrechen — dann belassen wir das Platform-Plugin ungesetzt,
-    damit die GUI wenigstens unter Wayland startet (Surfer dann extern /
-    Fallback-Viewer).
+    - Mit ``libxcb-cursor`` und ``DISPLAY``: ``xcb`` (noetig fuer Surfer-
+      Einbettung per X11-Reparenting; unter WSLg oft sonst Wayland).
+    - Ohne ``libxcb-cursor``: Qt 6.5+ bricht bei xcb hart ab. Deshalb wird
+      bei vorhandenem ``WAYLAND_DISPLAY`` explizit ``wayland`` gesetzt —
+      auch wenn ``QT_QPA_PLATFORM=xcb`` bereits in der Umgebung steht.
+      Nur so startet die GUI unter WSL/Ubuntu ohne das Paket; Surfer laeuft
+      dann extern bzw. der interne Viewer greift.
     """
     if not sys.platform.startswith("linux"):
         return
-    if os.environ.get("QT_QPA_PLATFORM"):
+
+    existing = (os.environ.get("QT_QPA_PLATFORM") or "").strip()
+    has_display = bool(os.environ.get("DISPLAY"))
+    has_wayland = bool(os.environ.get("WAYLAND_DISPLAY"))
+    cursor_ok = is_xcb_cursor_available()
+
+    if cursor_ok:
+        if existing:
+            return
+        if has_display:
+            os.environ["QT_QPA_PLATFORM"] = "xcb"
         return
-    if not os.environ.get("DISPLAY"):
+
+    # libxcb-cursor fehlt → xcb ist toedlich. Wayland erzwingen, falls moeglich.
+    apt_hint = "sudo apt install libxcb-cursor0"
+    if has_wayland:
+        if existing and existing != "wayland":
+            print(
+                f"Hinweis: QT_QPA_PLATFORM={existing} wird durch 'wayland' ersetzt, "
+                f"weil libxcb-cursor fehlt (sonst Absturz). Fuer Surfer-Einbettung: {apt_hint}",
+                file=sys.stderr,
+            )
+        elif not existing:
+            print(
+                "Hinweis: libxcb-cursor fehlt — starte mit QT_QPA_PLATFORM=wayland. "
+                f"Fuer Surfer-Einbettung wie unter Windows: {apt_hint}",
+                file=sys.stderr,
+            )
+        os.environ["QT_QPA_PLATFORM"] = "wayland"
         return
-    if not is_xcb_cursor_available():
+
+    if existing == "xcb" or (not existing and has_display):
         print(
-            "Hinweis: libxcb-cursor fehlt — Qt-xcb wird nicht erzwungen "
-            "(Surfer-Einbettung ggf. nicht verfuegbar). "
-            "Unter Ubuntu/Debian/WSL: sudo apt install libxcb-cursor0",
+            "Fehler: libxcb-cursor fehlt; das Qt-xcb-Plugin kann nicht geladen werden.\n"
+            f"Bitte installieren: {apt_hint}\n"
+            "Danach GHDL Studio neu starten.",
             file=sys.stderr,
         )
-        return
-    os.environ["QT_QPA_PLATFORM"] = "xcb"
+        # xcb aus der Umgebung nehmen, damit ein spaeterer manueller
+        # Wayland-Start nicht weiter blockiert wird.
+        if existing == "xcb":
+            del os.environ["QT_QPA_PLATFORM"]
 
 
 def qt_platform_name() -> str:
