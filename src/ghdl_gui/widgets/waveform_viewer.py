@@ -5,11 +5,11 @@ from __future__ import annotations
 from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import (
-    QAbstractScrollArea,
     QHBoxLayout,
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QScrollArea,
     QSplitter,
     QVBoxLayout,
     QWidget,
@@ -157,9 +157,10 @@ class WaveformViewer(QWidget):
         self._signal_list.setSelectionMode(QListWidget.SelectionMode.NoSelection)
         self._signal_list.itemChanged.connect(self._on_visibility_changed)
 
-        self._scroll_area = QAbstractScrollArea(self)
+        self._scroll_area = QScrollArea(self)
+        self._scroll_area.setWidgetResizable(False)
         self._canvas = _WaveformCanvas()
-        self._scroll_area.setViewport(self._canvas)
+        self._scroll_area.setWidget(self._canvas)
 
         zoom_in = QPushButton("Zoom +", self)
         zoom_out = QPushButton("Zoom -", self)
