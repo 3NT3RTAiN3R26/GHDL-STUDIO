@@ -85,23 +85,26 @@ tests/                        # Unit-Tests für die Qt-unabhängigen Module
 - **Optional, aber empfohlen:** [Surfer](https://surfer-project.org/) für die vollwertige,
   eingebettete Wellenform-Anzeige (siehe oben). Ohne Surfer funktioniert die GUI weiterhin
   vollständig über den eingebauten Fallback-Viewer.
-  - **Empfohlen (ohne Rust/Cargo):** fertige Binaries von den
-    [Surfer-Releases](https://gitlab.com/surfer-project/surfer/-/releases) laden.
-    Linux/WSL (x86_64), Beispiel für v0.7.0:
+  - **Empfohlen (ohne Rust/Cargo):** fertige Binaries laden.
+    Unter **Ubuntu 22.04 / WSL** bitte das **Rocky-Linux-Binary** nutzen — das normale
+    `surfer_linux_*.zip` braucht oft GLIBC ≥ 2.38/2.39 und startet dort nicht.
     ```bash
     mkdir -p ~/.local/bin
-    curl -L -o /tmp/surfer_linux.zip \
-      https://gitlab.com/api/v4/projects/42073614/packages/generic/surfer/v0.7.0/surfer_linux_v0.7.0.zip
-    unzip -o /tmp/surfer_linux.zip -d /tmp/surfer_extract
+    curl -L -o /tmp/surfer_linux_rocky.zip \
+      "https://gitlab.com/api/v4/projects/42073614/jobs/artifacts/main/raw/surfer_linux_rocky.zip?job=rocky_build"
+    unzip -o /tmp/surfer_linux_rocky.zip -d /tmp/surfer_extract
     install -m 755 /tmp/surfer_extract/surfer ~/.local/bin/surfer
     # PATH dauerhaft setzen (falls noch nicht):
-    echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+    grep -q '\$HOME/.local/bin' ~/.bashrc || echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
     source ~/.bashrc
     surfer --version
     ```
-    Windows: `surfer_win_v0.7.0.zip` von derselben Release-Seite entpacken und den
-    Ordner mit `surfer.exe` in den `PATH` aufnehmen bzw. in den GHDL-Studio-Einstellungen
-    den vollen Pfad zur Executable eintragen.
+    Neuere Distros (z. B. Ubuntu 24.04) können alternativ die Release-Zips von
+    [Surfer-Releases](https://gitlab.com/surfer-project/surfer/-/releases) nutzen
+    (`surfer_linux_v*.zip`).
+    Windows: `surfer_win_*.zip` von derselben Seite entpacken und den Ordner mit
+    `surfer.exe` in den `PATH` aufnehmen bzw. in den GHDL-Studio-Einstellungen
+    den vollen Pfad eintragen.
   - **Alternative aus Quellcode** (braucht Rust): zuerst
     [rustup](https://rustup.rs/) installieren, danach
     `cargo install --git https://gitlab.com/surfer-project/surfer.git surfer`

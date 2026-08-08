@@ -193,11 +193,10 @@ class RunSettingsDialog(QDialog):
                 "Nicht gefunden",
                 "Surfer wurde nicht im PATH gefunden. Bitte manuell auswaehlen.\n\n"
                 "Einfachste Installation (ohne Rust/Cargo):\n"
-                "fertige Binaries von\n"
+                "Unter Ubuntu 22.04/WSL das Rocky-Binary nutzen (aeltere glibc),\n"
+                "siehe README.md. Neuere Distros / Windows:\n"
                 "https://gitlab.com/surfer-project/surfer/-/releases\n"
-                "laden (Linux: surfer_linux_*.zip, Windows: surfer_win_*.zip),\n"
-                "entpacken und den Pfad hier eintragen.\n\n"
-                "Siehe auch README.md Abschnitt Voraussetzungen.",
+                "entpacken und den Pfad hier eintragen.",
             )
 
     def _on_check_version(self) -> None:
