@@ -62,7 +62,14 @@ tests/                        # Unit-Tests für die Qt-unabhängigen Module
 python3 -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+pip install -e .
 ```
+
+Der letzte Schritt (`pip install -e .`) installiert das `ghdl_gui`-Paket selbst
+(editierbar, d. h. Änderungen am Quellcode wirken sofort) und ist **erforderlich**,
+damit `python -m ghdl_gui` bzw. der Befehl `ghdl-gui` funktionieren. Ohne diesen
+Schritt bricht der Start mit `No module named ghdl_gui` ab, da `requirements.txt`
+nur die Abhängigkeit PySide6 installiert, nicht das Projekt selbst.
 
 ## Start
 
@@ -70,10 +77,9 @@ pip install -r requirements.txt
 python -m ghdl_gui
 ```
 
-oder, nach editierbarer Installation des Pakets:
+oder, dank der editierbaren Installation:
 
 ```bash
-pip install -e .
 ghdl-gui
 ```
 
