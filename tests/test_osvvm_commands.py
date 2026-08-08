@@ -50,7 +50,11 @@ def test_build_osvvm_batch_script_contains_source_and_build(tmp_path):
     assert "StartUp.tcl}" in script
     assert "build {" in script
     assert "demo.pro}" in script
-    assert script.strip().endswith("exit")
+    # Wrapper must tolerate OSVVM report failures after a PASSED simulate.
+    assert "catch {build" in script
+    assert "AnalyzeErrorCount" in script
+    assert "SimulateErrorCount" in script
+    assert script.strip().endswith("exit 0")
 
 
 def test_prepare_osvvm_run_writes_batch_script(tmp_path):
