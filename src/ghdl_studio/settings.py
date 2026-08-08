@@ -17,7 +17,7 @@ from ghdl_studio.ghdl_commands import (
     DEFAULT_STD,
     find_ghdl_executable,
 )
-from ghdl_studio.gtkwave_embed import find_gtkwave_executable
+from ghdl_studio.surfer_embed import find_surfer_executable
 
 ORG_NAME = "GhdlStudio"
 APP_NAME = "GhdlStudio"
@@ -100,23 +100,23 @@ class AppSettings:
         self._set("output_dir", value)
 
     @property
-    def gtkwave_executable(self) -> str:
-        stored = self._settings.value("gtkwave_executable", "", str)
+    def surfer_executable(self) -> str:
+        stored = self._settings.value("surfer_executable", "", str)
         if stored:
             return stored
-        return find_gtkwave_executable() or ""
+        return find_surfer_executable() or ""
 
-    @gtkwave_executable.setter
-    def gtkwave_executable(self, value: str) -> None:
-        self._set("gtkwave_executable", value)
+    @surfer_executable.setter
+    def surfer_executable(self, value: str) -> None:
+        self._set("surfer_executable", value)
 
     @property
-    def gtkwave_integration_enabled(self) -> bool:
-        return self._settings.value("gtkwave_integration_enabled", True, bool)
+    def surfer_integration_enabled(self) -> bool:
+        return self._settings.value("surfer_integration_enabled", True, bool)
 
-    @gtkwave_integration_enabled.setter
-    def gtkwave_integration_enabled(self, value: bool) -> None:
-        self._set("gtkwave_integration_enabled", value)
+    @surfer_integration_enabled.setter
+    def surfer_integration_enabled(self, value: bool) -> None:
+        self._set("surfer_integration_enabled", value)
 
     @property
     def last_project_dir(self) -> str:

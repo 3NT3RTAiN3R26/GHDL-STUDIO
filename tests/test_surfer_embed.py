@@ -8,12 +8,12 @@ import pytest
 
 QtWidgets = pytest.importorskip("PySide6.QtWidgets")
 
-from ghdl_studio.gtkwave_embed import (  # noqa: E402
-    GtkWaveEmbedder,
+from ghdl_studio.surfer_embed import (  # noqa: E402
+    SurferEmbedder,
     _collect_descendant_pids,
     _to_win32_long,
     ensure_linux_xcb_platform,
-    find_gtkwave_executable,
+    find_surfer_executable,
     is_embedding_supported,
     is_xlib_available,
 )
@@ -22,7 +22,7 @@ _HAS_LIVE_X11 = (
     sys.platform.startswith("linux")
     and bool(os.environ.get("DISPLAY"))
     and is_xlib_available()
-    and find_gtkwave_executable() is not None
+    and find_surfer_executable() is not None
 )
 
 
@@ -32,8 +32,8 @@ def qapp():
     yield app
 
 
-def test_find_gtkwave_executable_matches_shutil_which():
-    assert find_gtkwave_executable() == shutil.which("gtkwave")
+def test_find_surfer_executable_matches_shutil_which():
+    assert find_surfer_executable() == shutil.which("surfer")
 
 
 def test_is_embedding_supported_returns_bool():
@@ -41,23 +41,23 @@ def test_is_embedding_supported_returns_bool():
 
 
 def test_start_with_nonexistent_executable_emits_failed(qapp):
-    embedder = GtkWaveEmbedder()
+    embedder = SurferEmbedder()
     results = []
     embedder.failed.connect(lambda reason: results.append(("failed", reason)))
     embedder.embedded.connect(lambda widget: results.append(("embedded", widget)))
 
     parent = QtWidgets.QWidget()
-    embedder.start("/nonexistent/gtkwave-binary-that-does-not-exist", "/tmp/does-not-matter.vcd", parent)
+    embedder.start("/nonexistent/surfer-binary-that-does-not-exist", "/tmp/does-not-matter.vcd", parent)
 
     assert len(results) == 1
     assert results[0][0] == "failed"
-    assert "GTKWave" in results[0][1]
+    assert "Surfer" in results[0][1]
 
     embedder.stop()
 
 
 def test_is_running_false_before_start():
-    embedder = GtkWaveEmbedder()
+    embedder = SurferEmbedder()
     assert embedder.is_running() is False
 
 
@@ -113,7 +113,7 @@ def test_to_win32_long_maps_unsigned_styles_into_signed_32bit_range():
 def test_collect_descendant_pids_finds_child_process():
     # Startet einen Kindprozess, der kurz lebt, und prueft, dass seine PID
     # als Nachkomme des aktuellen Prozesses gefunden wird (relevant fuer
-    # gtkwave-Wrapper-Skripte, die den eigentlichen GTK-Prozess forken statt
+    # surfer-Wrapper-Skripte, die den eigentlichen GTK-Prozess forken statt
     # sich per exec() selbst zu ersetzen).
     child = subprocess.Popen(["sleep", "2"])
     try:
@@ -126,19 +126,19 @@ def test_collect_descendant_pids_finds_child_process():
 
 
 @pytest.mark.skipif(
-    not _HAS_LIVE_X11, reason="benoetigt einen laufenden X-Server, python-xlib und gtkwave im PATH"
+    not _HAS_LIVE_X11, reason="benoetigt einen laufenden X-Server, python-xlib und surfer im PATH"
 )
-def test_x11_full_window_tree_fallback_finds_gtkwave_window(tmp_path):
+def test_x11_full_window_tree_fallback_finds_surfer_window(tmp_path):
     """Verifiziert, dass die vollstaendige Fensterbaum-Suche (der Fallback
     fuer Compositor/Fenstermanager, die _NET_CLIENT_LIST nicht pflegen,
-    z. B. WSLg) das GTKWave-Fenster tatsaechlich unabhaengig vom
+    z. B. WSLg) das Surfer-Fenster tatsaechlich unabhaengig vom
     schnellen EWMH-Pfad findet."""
     from Xlib import display
 
-    from ghdl_studio.gtkwave_embed import _iter_x11_window_tree, _scan_x11_windows
+    from ghdl_studio.surfer_embed import _iter_x11_window_tree, _scan_x11_windows
 
     vcd_path = tmp_path / "minimal.vcd"
-    # Mindestens ein Signal noetig - sonst beendet GTKWave sofort mit
+    # Mindestens ein Signal noetig - sonst beendet Surfer sofort mit
     # "No symbols in VCD file..nothing to do!" und oeffnet kein Fenster.
     vcd_path.write_text(
         "$timescale 1 ns $end\n"
@@ -151,7 +151,7 @@ def test_x11_full_window_tree_fallback_finds_gtkwave_window(tmp_path):
         encoding="utf-8",
     )
 
-    proc = subprocess.Popen([find_gtkwave_executable(), str(vcd_path)])
+    proc = subprocess.Popen([find_surfer_executable(), str(vcd_path)])
     try:
         deadline = time.monotonic() + 15
         conn = display.Display()
@@ -167,7 +167,7 @@ def test_x11_full_window_tree_fallback_finds_gtkwave_window(tmp_path):
             if found is None:
                 time.sleep(0.3)
         conn.close()
-        assert found is not None, "Fensterbaum-Fallback haette das GTKWave-Fenster finden muessen."
+        assert found is not None, "Fensterbaum-Fallback haette das Surfer-Fenster finden muessen."
     finally:
         if proc.poll() is None:
             proc.kill()

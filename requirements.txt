@@ -1,7 +1,7 @@
 PySide6>=6.6,<7
 
 # Nur unter Linux benoetigt: ermoeglicht die native Einbettung des
-# GTKWave-Fensters (X11-Fenstersuche per PID) im Wellenformen-Tab. Fehlt
+# Surfer-Fensters (X11-Fenstersuche per PID) im Wellenformen-Tab. Fehlt
 # diese Abhaengigkeit, faellt die GUI automatisch auf den eingebauten
 # Wellenform-Viewer zurueck.
 python-xlib>=0.33; sys_platform == "linux"

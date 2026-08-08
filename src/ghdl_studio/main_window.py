@@ -30,7 +30,7 @@ from ghdl_studio.ghdl_commands import (
     clean_output_dir,
 )
 from ghdl_studio.ghdl_runner import GhdlRunner
-from ghdl_studio.gtkwave_embed import GtkWaveEmbedder
+from ghdl_studio.surfer_embed import SurferEmbedder
 from ghdl_studio.settings import AppSettings
 from ghdl_studio.vcd_parser import parse_vcd
 from ghdl_studio.vhdl_scanner import find_vhdl_entities, is_verilog_file, is_vhdl_file
@@ -40,7 +40,7 @@ from ghdl_studio.widgets.log_console import LogConsole
 from ghdl_studio.widgets.run_settings_dialog import RunSettingsDialog
 from ghdl_studio.widgets.waveform_viewer import WaveformViewer
 
-_WAVEFORM_PAGE_GTKWAVE = 0
+_WAVEFORM_PAGE_SURFER = 0
 _WAVEFORM_PAGE_INTERNAL = 1
 
 
@@ -72,13 +72,13 @@ class MainWindow(QMainWindow):
         self._log_console = LogConsole(self)
         self._waveform_viewer = WaveformViewer(self)
 
-        self._gtkwave_embedder = GtkWaveEmbedder(self)
-        self._gtkwave_embedder.embedded.connect(self._on_gtkwave_embedded)
-        self._gtkwave_embedder.failed.connect(self._on_gtkwave_failed)
-        self._gtkwave_page = QWidget(self)
-        self._gtkwave_page_layout = QVBoxLayout(self._gtkwave_page)
-        self._gtkwave_page_layout.setContentsMargins(0, 0, 0, 0)
-        self._gtkwave_container: QWidget | None = None
+        self._surfer_embedder = SurferEmbedder(self)
+        self._surfer_embedder.embedded.connect(self._on_surfer_embedded)
+        self._surfer_embedder.failed.connect(self._on_surfer_failed)
+        self._surfer_page = QWidget(self)
+        self._surfer_page_layout = QVBoxLayout(self._surfer_page)
+        self._surfer_page_layout.setContentsMargins(0, 0, 0, 0)
+        self._surfer_container: QWidget | None = None
 
         self._waveform_status_label = QLabel(self)
         self._waveform_status_label.setStyleSheet(
@@ -87,19 +87,19 @@ class MainWindow(QMainWindow):
         self._waveform_status_label.setText("Noch keine Simulation ausgefuehrt.")
         self._waveform_status_label.setWordWrap(True)
 
-        self._gtkwave_retry_button = QPushButton("GTKWave erneut versuchen", self)
-        self._gtkwave_retry_button.setVisible(False)
-        self._gtkwave_retry_button.clicked.connect(self._on_retry_gtkwave_clicked)
+        self._surfer_retry_button = QPushButton("Surfer erneut versuchen", self)
+        self._surfer_retry_button.setVisible(False)
+        self._surfer_retry_button.clicked.connect(self._on_retry_surfer_clicked)
 
         status_row = QHBoxLayout()
         status_row.setContentsMargins(0, 0, 0, 0)
         status_row.addWidget(self._waveform_status_label, 1)
-        status_row.addWidget(self._gtkwave_retry_button)
+        status_row.addWidget(self._surfer_retry_button)
         status_row_widget = QWidget(self)
         status_row_widget.setLayout(status_row)
 
         self._waveform_stack = QStackedWidget(self)
-        self._waveform_stack.addWidget(self._gtkwave_page)  # index 0
+        self._waveform_stack.addWidget(self._surfer_page)  # index 0
         self._waveform_stack.addWidget(self._waveform_viewer)  # index 1
 
         self._waveform_tab = QWidget(self)
@@ -272,7 +272,7 @@ class MainWindow(QMainWindow):
         if dialog.exec():
             dialog.apply()
             if self._current_vcd_path:
-                self._start_gtkwave_for(self._current_vcd_path)
+                self._start_surfer_for(self._current_vcd_path)
 
     def _show_about(self) -> None:
         QMessageBox.about(
@@ -422,11 +422,11 @@ class MainWindow(QMainWindow):
         output_dir = self._run_options.output_dir
         removed = clean_output_dir(output_dir)
 
-        # Der GTKWave-Prozess bzw. die interne Wellenformanzeige zeigen
+        # Der Surfer-Prozess bzw. die interne Wellenformanzeige zeigen
         # ggf. eine soeben geloeschte VCD-Datei an - beides zuruecksetzen.
-        self._gtkwave_embedder.stop()
-        self._clear_gtkwave_container()
-        self._gtkwave_retry_button.setVisible(False)
+        self._surfer_embedder.stop()
+        self._clear_surfer_container()
+        self._surfer_retry_button.setVisible(False)
         self._waveform_stack.setCurrentIndex(_WAVEFORM_PAGE_INTERNAL)
         self._current_vcd_path = None
 
@@ -476,68 +476,68 @@ class MainWindow(QMainWindow):
             return
 
         # Der interne Viewer wird immer sofort befuellt, damit unabhaengig
-        # vom Ergebnis der GTKWave-Einbettung stets eine funktionierende
+        # vom Ergebnis der Surfer-Einbettung stets eine funktionierende
         # Anzeige vorhanden ist (Fallback-Garantie).
         self._waveform_viewer.set_data(data)
         self._waveform_stack.setCurrentIndex(_WAVEFORM_PAGE_INTERNAL)
         self._central_tabs.setCurrentWidget(self._waveform_tab)
 
         self._current_vcd_path = vcd_path
-        self._start_gtkwave_for(vcd_path)
+        self._start_surfer_for(vcd_path)
 
-    def _start_gtkwave_for(self, vcd_path: str) -> None:
-        self._gtkwave_embedder.stop()
-        self._clear_gtkwave_container()
-        self._gtkwave_retry_button.setVisible(False)
+    def _start_surfer_for(self, vcd_path: str) -> None:
+        self._surfer_embedder.stop()
+        self._clear_surfer_container()
+        self._surfer_retry_button.setVisible(False)
 
-        if not self._settings.gtkwave_integration_enabled:
-            self._waveform_status_label.setText("Wellenform-Anzeige: interner Viewer (GTKWave-Integration deaktiviert).")
+        if not self._settings.surfer_integration_enabled:
+            self._waveform_status_label.setText("Wellenform-Anzeige: interner Viewer (Surfer-Integration deaktiviert).")
             return
 
-        gtkwave_executable = self._settings.gtkwave_executable
-        if not gtkwave_executable:
+        surfer_executable = self._settings.surfer_executable
+        if not surfer_executable:
             self._waveform_status_label.setText(
-                "Wellenform-Anzeige: interner Viewer (GTKWave nicht gefunden - Pfad in den Einstellungen pruefen)."
+                "Wellenform-Anzeige: interner Viewer (Surfer nicht gefunden - Pfad in den Einstellungen pruefen)."
             )
             return
 
         self._waveform_status_label.setText(
-            "GTKWave wird gestartet und eingebettet... (kann einige Sekunden dauern)"
+            "Surfer wird gestartet und eingebettet... (kann einige Sekunden dauern)"
         )
-        self._gtkwave_embedder.start(gtkwave_executable, vcd_path, self._gtkwave_page)
+        self._surfer_embedder.start(surfer_executable, vcd_path, self._surfer_page)
 
-    def _on_retry_gtkwave_clicked(self) -> None:
+    def _on_retry_surfer_clicked(self) -> None:
         if self._current_vcd_path:
-            self._start_gtkwave_for(self._current_vcd_path)
+            self._start_surfer_for(self._current_vcd_path)
 
-    def _clear_gtkwave_container(self) -> None:
-        if self._gtkwave_container is not None:
-            self._gtkwave_page_layout.removeWidget(self._gtkwave_container)
-            self._gtkwave_container.deleteLater()
-            self._gtkwave_container = None
+    def _clear_surfer_container(self) -> None:
+        if self._surfer_container is not None:
+            self._surfer_page_layout.removeWidget(self._surfer_container)
+            self._surfer_container.deleteLater()
+            self._surfer_container = None
 
-    def _on_gtkwave_embedded(self, container: QWidget) -> None:
+    def _on_surfer_embedded(self, container: QWidget) -> None:
         # Unter Windows kann der Container bereits vom Embedder in das Layout
         # gehaengt worden sein (noetig fuer ein gueltiges natives winId vor
         # SetParent). clear + addWidget ist in beiden Faellen idempotent.
-        if container is not self._gtkwave_container:
-            self._clear_gtkwave_container()
-            self._gtkwave_container = container
-            if self._gtkwave_page_layout.indexOf(container) < 0:
-                self._gtkwave_page_layout.addWidget(container)
-        self._waveform_stack.setCurrentIndex(_WAVEFORM_PAGE_GTKWAVE)
-        self._waveform_status_label.setText("Wellenform-Anzeige: GTKWave (eingebettet).")
-        self._gtkwave_retry_button.setVisible(False)
-        self._log_console.append_success("GTKWave wurde erfolgreich in den Wellenformen-Tab eingebettet.")
+        if container is not self._surfer_container:
+            self._clear_surfer_container()
+            self._surfer_container = container
+            if self._surfer_page_layout.indexOf(container) < 0:
+                self._surfer_page_layout.addWidget(container)
+        self._waveform_stack.setCurrentIndex(_WAVEFORM_PAGE_SURFER)
+        self._waveform_status_label.setText("Wellenform-Anzeige: Surfer (eingebettet).")
+        self._surfer_retry_button.setVisible(False)
+        self._log_console.append_success("Surfer wurde erfolgreich in den Wellenformen-Tab eingebettet.")
 
-    def _on_gtkwave_failed(self, reason: str) -> None:
-        self._clear_gtkwave_container()
-        self._waveform_status_label.setText(f"Wellenform-Anzeige: interner Viewer (GTKWave: {reason})")
-        self._log_console.append_output(f"GTKWave-Einbettung nicht verfuegbar: {reason}")
+    def _on_surfer_failed(self, reason: str) -> None:
+        self._clear_surfer_container()
+        self._waveform_status_label.setText(f"Wellenform-Anzeige: interner Viewer (Surfer: {reason})")
+        self._log_console.append_output(f"Surfer-Einbettung nicht verfuegbar: {reason}")
         self._waveform_stack.setCurrentIndex(_WAVEFORM_PAGE_INTERNAL)
-        if self._settings.gtkwave_integration_enabled and self._settings.gtkwave_executable:
-            self._gtkwave_retry_button.setVisible(True)
+        if self._settings.surfer_integration_enabled and self._settings.surfer_executable:
+            self._surfer_retry_button.setVisible(True)
 
     def closeEvent(self, event) -> None:  # noqa: N802 (Qt override)
-        self._gtkwave_embedder.stop()
+        self._surfer_embedder.stop()
         super().closeEvent(event)

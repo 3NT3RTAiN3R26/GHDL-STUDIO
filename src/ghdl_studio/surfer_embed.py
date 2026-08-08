@@ -1,9 +1,10 @@
-"""Einbettung von GTKWave als natives Fenster in ein Qt-Widget.
+"""Einbettung von Surfer (https://surfer-project.org/) als natives Fenster.
 
-GTKWave bietet keine offizielle Embedding-API. Dieses Modul realisiert die
-Einbettung ueber plattformspezifisches "Window Reparenting":
+Surfer ist ein moderner Wellenform-Viewer (VCD/FST/GHW) und bietet keine
+offizielle Embedding-API. Dieses Modul realisiert die Einbettung ueber
+plattformspezifisches "Window Reparenting":
 
-- **Linux/X11**: GTKWave wird als Subprozess gestartet, anschliessend wird
+- **Linux/X11**: Surfer wird als Subprozess gestartet, anschliessend wird
   dessen Top-Level-Fenster gefunden (benoetigt ``python-xlib``) und per
   X11-``XReparentWindow`` in ein natives Qt-Container-Widget gehaengt
   (analog zu ``SetParent`` unter Windows). Die Fenstersuche versucht
@@ -16,7 +17,7 @@ Einbettung ueber plattformspezifisches "Window Reparenting":
   ``xcb``-Plugin (siehe ``ensure_linux_xcb_platform``).
 - **Windows**: Fenstersuche per WinAPI; Einbettung per ``SetParent`` +
   Stil-/Groessen-Sync (nicht ``QWindow.fromWinId``).
-- **macOS und alle anderen Faelle**: kein natives Reparenting; GTKWave
+- **macOS und alle anderen Faelle**: kein natives Reparenting; Surfer
   laeuft als eigenstaendiges Fenster weiter.
 
 Schlaegt die Einbettung fehl, signalisiert ``failed`` eine konkrete
@@ -34,13 +35,13 @@ from PySide6.QtWidgets import QWidget
 
 _POLL_INTERVAL_MS = 300
 _MAX_POLL_ATTEMPTS = 60  # ~18 Sekunden Timeout - WSLg/langsamere Compositor koennen etwas brauchen
-_GTKWAVE_WM_CLASS_HINTS = ("gtkwave",)
+_SURFER_WM_CLASS_HINTS = ("surfer",)
 _MIN_SIGNIFICANT_WINDOW_SIZE = 100  # Pixel, zur Vermeidung falscher WM_CLASS-Treffer auf Hilfsfenster
 
 
-def find_gtkwave_executable() -> str | None:
-    """Sucht die gtkwave-Executable im PATH und gibt den vollen Pfad zurueck."""
-    return shutil.which("gtkwave")
+def find_surfer_executable() -> str | None:
+    """Sucht die surfer-Executable im PATH und gibt den vollen Pfad zurueck."""
+    return shutil.which("surfer")
 
 
 def is_embedding_supported() -> bool:
@@ -89,7 +90,7 @@ def qt_platform_name() -> str:
 def _collect_descendant_pids(root_pid: int) -> set[int]:
     """Sammelt ``root_pid`` und alle (rekursiven) Kindprozess-PIDs.
 
-    Notwendig, da manche gtkwave-Pakete ueber ein Wrapper-Skript gestartet
+    Notwendig, da manche surfer-Pakete ueber ein Wrapper-Skript gestartet
     werden, das den eigentlichen GTK-Prozess per ``fork()`` als Kindprozess
     erzeugt statt sich per ``exec()`` selbst zu ersetzen. In diesem Fall
     stimmt die von ``QProcess`` gemeldete PID nicht mit der PID des
@@ -157,7 +158,7 @@ def _scan_x11_windows(windows, net_wm_pid_atom, candidate_pids):
                 if wm_class_prop and wm_class_prop.value:
                     raw = wm_class_prop.value
                     text = raw.decode("latin-1", errors="ignore") if isinstance(raw, bytes) else str(raw)
-                    if any(hint in text.lower() for hint in _GTKWAVE_WM_CLASS_HINTS) and _is_significant_x11_window(
+                    if any(hint in text.lower() for hint in _SURFER_WM_CLASS_HINTS) and _is_significant_x11_window(
                         window
                     ):
                         wm_class_match = int(window.id)
@@ -291,7 +292,7 @@ def _embed_foreign_window_x11(xid: int, container: QWidget) -> None:
     if platform and platform != "xcb":
         raise OSError(
             f"Qt laeuft mit dem Platform-Plugin '{platform}', nicht 'xcb'. "
-            "X11-Einbettung von GTKWave erfordert XCB (unter WSL/WSLg: App neu "
+            "X11-Einbettung von Surfer erfordert XCB (unter WSL/WSLg: App neu "
             "starten — GHDL Studio setzt QT_QPA_PLATFORM=xcb automatisch, sofern "
             "nicht anders gesetzt; alternativ manuell "
             "'export QT_QPA_PLATFORM=xcb' vor dem Start)."
@@ -463,7 +464,7 @@ def _embed_foreign_window_windows(hwnd: int, container: QWidget) -> None:
 
     ``QWindow.fromWinId()`` kombiniert mit ``createWindowContainer()``
     meldet zwar keinen Fehler, bettet ein echtes, fremdprozess-eigenes
-    Fenster (wie GTKWave) unter Windows aber oft nicht sichtbar ein - das
+    Fenster (wie Surfer) unter Windows aber oft nicht sichtbar ein - das
     Fenster bleibt als eigenstaendiges Top-Level-Fenster sichtbar. Der
     direkte WinAPI-Weg (``SetParent`` + Stiländerung) ist zuverlässiger.
     """
@@ -533,15 +534,15 @@ def _embed_foreign_window_windows(hwnd: int, container: QWidget) -> None:
     container._ghdl_studio_resize_sync = resizer  # type: ignore[attr-defined]
 
 
-class GtkWaveEmbedder(QObject):
-    """Startet GTKWave fuer eine VCD-Datei und bettet dessen Fenster ein.
+class SurferEmbedder(QObject):
+    """Startet Surfer fuer eine VCD-Datei und bettet dessen Fenster ein.
 
     Verwendung::
 
-        embedder = GtkWaveEmbedder(parent)
+        embedder = SurferEmbedder(parent)
         embedder.embedded.connect(on_embedded)   # erhaelt das Container-QWidget
         embedder.failed.connect(on_failed)        # erhaelt eine Fehlermeldung
-        embedder.start(gtkwave_path, vcd_path, parent_widget)
+        embedder.start(surfer_path, vcd_path, parent_widget)
     """
 
     embedded = Signal(QWidget)
@@ -569,8 +570,8 @@ class GtkWaveEmbedder(QObject):
                 proc.waitForFinished(3000)
             proc.deleteLater()
 
-    def start(self, gtkwave_executable: str, vcd_path: str, parent_widget: QWidget) -> None:
-        """Startet GTKWave fuer ``vcd_path`` und versucht anschliessend, das
+    def start(self, surfer_executable: str, vcd_path: str, parent_widget: QWidget) -> None:
+        """Startet Surfer fuer ``vcd_path`` und versucht anschliessend, das
         entstehende Fenster in ``parent_widget`` einzubetten. Ergebnis wird
         ueber ``embedded``/``failed`` signalisiert."""
         self.stop()
@@ -578,30 +579,30 @@ class GtkWaveEmbedder(QObject):
         if not is_embedding_supported():
             self.failed.emit(
                 "Fenster-Einbettung wird auf dieser Plattform nicht unterstuetzt "
-                "(nur Linux/X11 und Windows). GTKWave wird als eigenstaendiges "
+                "(nur Linux/X11 und Windows). Surfer wird als eigenstaendiges "
                 "Fenster geoeffnet."
             )
-            self._launch_standalone(gtkwave_executable, vcd_path)
+            self._launch_standalone(surfer_executable, vcd_path)
             return
 
         self._parent_widget = parent_widget
         self._attempts = 0
         self._process = QProcess(self)
-        self._process.start(gtkwave_executable, [vcd_path])
+        self._process.start(surfer_executable, [vcd_path])
         if not self._process.waitForStarted(5000):
-            self.failed.emit("GTKWave konnte nicht gestartet werden. Ist GTKWave installiert und im PATH?")
+            self.failed.emit("Surfer konnte nicht gestartet werden. Ist Surfer installiert und im PATH?")
             self._process = None
             return
 
         self._timer.start()
 
-    def _launch_standalone(self, gtkwave_executable: str, vcd_path: str) -> None:
-        QProcess.startDetached(gtkwave_executable, [vcd_path])
+    def _launch_standalone(self, surfer_executable: str, vcd_path: str) -> None:
+        QProcess.startDetached(surfer_executable, [vcd_path])
 
     def _poll_for_window(self) -> None:
         if self._process is None or not self.is_running():
             self._timer.stop()
-            self.failed.emit("GTKWave wurde beendet, bevor ein Fenster eingebettet werden konnte.")
+            self.failed.emit("Surfer wurde beendet, bevor ein Fenster eingebettet werden konnte.")
             return
 
         self._attempts += 1
@@ -622,7 +623,7 @@ class GtkWaveEmbedder(QObject):
             self.failed.emit(self._build_timeout_reason())
 
     def _build_timeout_reason(self) -> str:
-        reason = "GTKWave-Fenster wurde nicht rechtzeitig gefunden (Timeout)."
+        reason = "Surfer-Fenster wurde nicht rechtzeitig gefunden (Timeout)."
         if sys.platform.startswith("linux"):
             if not is_xlib_available():
                 reason += (
@@ -673,6 +674,6 @@ class GtkWaveEmbedder(QObject):
             if resizer is not None and hasattr(resizer, "close_display"):
                 resizer.close_display()
             container.deleteLater()
-            self.failed.emit(f"GTKWave-Fenster konnte nicht eingebettet werden: {exc}")
+            self.failed.emit(f"Surfer-Fenster konnte nicht eingebettet werden: {exc}")
             return
         self.embedded.emit(container)

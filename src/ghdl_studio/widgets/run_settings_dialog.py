@@ -28,7 +28,7 @@ from ghdl_studio.ghdl_commands import (
     find_ghdl_executable,
     get_ghdl_version,
 )
-from ghdl_studio.gtkwave_embed import find_gtkwave_executable, is_embedding_supported
+from ghdl_studio.surfer_embed import find_surfer_executable, is_embedding_supported
 from ghdl_studio.settings import AppSettings
 
 
@@ -71,24 +71,24 @@ class RunSettingsDialog(QDialog):
         output_dir_row.addWidget(output_dir_browse_button)
         output_dir_row.addWidget(output_dir_reset_button)
 
-        self._gtkwave_path_edit = QLineEdit(settings.gtkwave_executable, self)
-        gtkwave_browse_button = QPushButton("Durchsuchen...", self)
-        gtkwave_browse_button.clicked.connect(self._on_browse_gtkwave)
-        gtkwave_detect_button = QPushButton("Automatisch erkennen", self)
-        gtkwave_detect_button.clicked.connect(self._on_autodetect_gtkwave)
-        gtkwave_path_row = QHBoxLayout()
-        gtkwave_path_row.addWidget(self._gtkwave_path_edit)
-        gtkwave_path_row.addWidget(gtkwave_browse_button)
-        gtkwave_path_row.addWidget(gtkwave_detect_button)
+        self._surfer_path_edit = QLineEdit(settings.surfer_executable, self)
+        surfer_browse_button = QPushButton("Durchsuchen...", self)
+        surfer_browse_button.clicked.connect(self._on_browse_surfer)
+        surfer_detect_button = QPushButton("Automatisch erkennen", self)
+        surfer_detect_button.clicked.connect(self._on_autodetect_surfer)
+        surfer_path_row = QHBoxLayout()
+        surfer_path_row.addWidget(self._surfer_path_edit)
+        surfer_path_row.addWidget(surfer_browse_button)
+        surfer_path_row.addWidget(surfer_detect_button)
 
-        self._gtkwave_enabled_check = QCheckBox(
-            "GTKWave im Wellenformen-Tab einbetten (falls verfuegbar)", self
+        self._surfer_enabled_check = QCheckBox(
+            "Surfer im Wellenformen-Tab einbetten (falls verfuegbar)", self
         )
-        self._gtkwave_enabled_check.setChecked(settings.gtkwave_integration_enabled)
+        self._surfer_enabled_check.setChecked(settings.surfer_integration_enabled)
         if not is_embedding_supported():
-            self._gtkwave_enabled_check.setToolTip(
+            self._surfer_enabled_check.setToolTip(
                 "Fenster-Einbettung wird auf dieser Plattform nicht unterstuetzt "
-                "(nur Linux/X11 und Windows). GTKWave wird stattdessen als "
+                "(nur Linux/X11 und Windows). Surfer wird stattdessen als "
                 "eigenstaendiges Fenster geoeffnet."
             )
 
@@ -137,8 +137,8 @@ class RunSettingsDialog(QDialog):
         form.addRow("", check_button)
         form.addRow("VHDL-Standard:", self._std_combo)
         form.addRow("Ausgabeverzeichnis:", output_dir_row)
-        form.addRow("GTKWave-Executable:", gtkwave_path_row)
-        form.addRow("", self._gtkwave_enabled_check)
+        form.addRow("Surfer-Executable:", surfer_path_row)
+        form.addRow("", self._surfer_enabled_check)
         form.addRow("Analyze-Flags (ghdl -a):", analyze_flags_row)
         form.addRow("Elaborate-Flags (ghdl -e):", elaborate_flags_row)
         form.addRow("Run-Flags (ghdl -r):", run_flags_row)
@@ -178,18 +178,22 @@ class RunSettingsDialog(QDialog):
     def _on_reset_output_dir(self) -> None:
         self._output_dir_edit.setText(DEFAULT_OUTPUT_DIR)
 
-    def _on_browse_gtkwave(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "GTKWave-Executable auswaehlen")
+    def _on_browse_surfer(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "Surfer-Executable auswaehlen")
         if path:
-            self._gtkwave_path_edit.setText(path)
+            self._surfer_path_edit.setText(path)
 
-    def _on_autodetect_gtkwave(self) -> None:
-        found = find_gtkwave_executable()
+    def _on_autodetect_surfer(self) -> None:
+        found = find_surfer_executable()
         if found:
-            self._gtkwave_path_edit.setText(found)
+            self._surfer_path_edit.setText(found)
         else:
             QMessageBox.warning(
-                self, "Nicht gefunden", "GTKWave wurde nicht im PATH gefunden. Bitte manuell auswaehlen."
+                self,
+                "Nicht gefunden",
+                "Surfer wurde nicht im PATH gefunden. Bitte manuell auswaehlen.\n"
+                "Installation: https://surfer-project.org/ bzw.\n"
+                "cargo install --git https://gitlab.com/surfer-project/surfer.git surfer",
             )
 
     def _on_check_version(self) -> None:
@@ -215,8 +219,8 @@ class RunSettingsDialog(QDialog):
 
     def apply(self) -> None:
         self._settings.ghdl_executable = self._ghdl_path_edit.text().strip()
-        self._settings.gtkwave_executable = self._gtkwave_path_edit.text().strip()
-        self._settings.gtkwave_integration_enabled = self._gtkwave_enabled_check.isChecked()
+        self._settings.surfer_executable = self._surfer_path_edit.text().strip()
+        self._settings.surfer_integration_enabled = self._surfer_enabled_check.isChecked()
         self._settings.vhdl_std = self._std_combo.currentText()
         self._run_options.std = self._std_combo.currentText()
         output_dir = self._output_dir_edit.text().strip() or DEFAULT_OUTPUT_DIR
