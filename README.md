@@ -316,13 +316,19 @@ Files in `examples/adder/`:
 
 #### OSVVM mode (`.pro` / TCL)
 
-1. Install `tclsh` and an [OSVVM Libraries](https://github.com/OSVVM) checkout;
-   build the utility library once (`build …/osvvm` after `source …/Scripts/StartUp.tcl`)
+1. Install `tclsh` and clone [OsvvmLibraries](https://github.com/OSVVM/OsvvmLibraries)
+   **with submodules** (needs the `osvvm` utility library):
+   ```bash
+   git clone --recursive https://github.com/OSVVM/OsvvmLibraries
+   # or, if already cloned:  cd OsvvmLibraries && git submodule update --init osvvm
+   ```
 2. Settings → **TCL executable** + **OSVVM Scripts path**
    (`…/OsvvmLibraries/Scripts` or `…/OsvvmLibraries`)
 3. At startup choose **OSVVM mode** and select `examples/adder/adder.pro`
-4. **Simulation → Build .pro (OSVVM)** — runs `analyze` / `simulate adder_tb`
-   (with `SetSaveWaves` so a `.ghw` can be opened afterwards)
+4. **Simulation → Build .pro (OSVVM)** — the `.pro` first `include`s
+   `OsvvmLibraries/osvvm`, then analyzes/simulates `adder_tb`
+   (`SetSaveWaves` writes a `.ghw` when possible). The first build compiles
+   OSVVM and takes longer; later runs reuse `VHDL_LIBS/`.
 
 Successful run of `adder_tb` (13 OSVVM affirmations passed), with waveforms and Output log:
 

@@ -3,14 +3,12 @@
 #
 #  Prerequisites:
 #    1. TCL (tclsh) and GHDL on PATH
-#    2. OSVVM Scripts / OsvvmLibraries installed
+#    2. OsvvmLibraries installed with the osvvm utility submodule, e.g.:
+#         git clone --recursive https://github.com/OSVVM/OsvvmLibraries
 #       https://github.com/OSVVM/OSVVM-Scripts
-#    3. OSVVM utility library built once, e.g.:
-#         build <OsvvmLibraries>/osvvm
-#       (or build <OsvvmLibraries>/OsvvmLibraries.pro)
 #
 #  Run with GHDL Studio (OSVVM mode):
-#    Settings → TCL executable + OSVVM Scripts path
+#    Settings → TCL executable + OSVVM Scripts path (…/OsvvmLibraries/Scripts)
 #    Startup → OSVVM mode → select this file → Build .pro (OSVVM)
 #
 #  Or manually:
@@ -21,6 +19,18 @@
 
 SetVHDLVersion 2008
 SetSaveWaves true
+
+# Compile the OSVVM utility library (library osvvm) from the same
+# OsvvmLibraries tree that StartUp.tcl loaded. Required because adder_tb
+# uses:  library osvvm; context osvvm.OsvvmContext;
+set _osvvmUtil [file normalize [file join $::osvvm::OsvvmLibraries osvvm]]
+if {![file isdirectory $_osvvmUtil]} {
+  error "OSVVM utility library not found at '${_osvvmUtil}'.\n\
+Clone OsvvmLibraries with submodules:\n\
+  git clone --recursive https://github.com/OSVVM/OsvvmLibraries\n\
+Or:  cd OsvvmLibraries && git submodule update --init osvvm"
+}
+include $_osvvmUtil
 
 library work
 analyze adder.vhd

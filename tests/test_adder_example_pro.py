@@ -20,6 +20,10 @@ def test_adder_pro_contains_analyze_and_simulate():
     assert "simulate adder_tb" in text
     assert "SetSaveWaves" in text
     assert "SetVHDLVersion 2008" in text
+    # Must pull in library osvvm before analyzing the OSVVM testbench.
+    assert "include $_osvvmUtil" in text
+    assert "OsvvmLibraries" in text
+    assert "osvvm" in text
 
 
 def test_adder_pro_can_be_wired_into_osvvm_batch(tmp_path):
