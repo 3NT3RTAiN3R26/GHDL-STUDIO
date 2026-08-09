@@ -37,6 +37,9 @@ On **every operating system** the interface uses a consistent dark theme
   - Combined flow "Analyze + Elaborate + Run" (individual Analyze / Elaborate / Run
     buttons do **not** chain into the next step)
   - **Build .pro (OSVVM)** in OSVVM mode (`tclsh` + OSVVM Scripts)
+  - **Precompile OSVVM library…** (both modes): `SetLibraryDirectory` +
+    `build …/osvvm` via TCL so Normal mode `-P` can resolve
+    `use osvvm.RandomPkg.all` (optional: auto-set **OSVVM lib path**)
   - After a successful OSVVM build, opens an **OSVVM Report** tab with the
     HTML summary (default `build/build_all/build_all.html` next to the `.pro`;
     configurable under **Settings → OSVVM HTML report** — absolute paths OK)
@@ -115,9 +118,14 @@ tests/                        # Unit tests for the Qt-independent modules
    - **TCL executable** → `tclsh` (or Detect automatically)
    - **OSVVM Scripts path** → `…/OsvvmLibraries/Scripts` or `…/OsvvmLibraries`
 4. At startup choose **OSVVM mode** and select your ``.pro`` file
-5. **Simulation → Build .pro (OSVVM)** runs
+5. Set **Settings → GHDL executable** to your `ghdl` / `ghdl.exe` (or leave
+   auto-detect). On **native Windows**, OSVVM Scripts call Unix `which ghdl`
+   then `exec $ghdl --version`. GHDL Studio installs space-free `which.cmd` /
+   `ghdl.cmd` shims (single path, quoted target under e.g. `Program Files`)
+   and prepends them to `PATH` before `source StartUp.tcl`.
+6. **Simulation → Build .pro (OSVVM)** runs
    `source StartUp.tcl` then `build <your.pro>`
-6. If the script writes a ``.ghw``/``.vcd`` next to the ``.pro``, GHDL Studio
+7. If the script writes a ``.ghw``/``.vcd`` next to the ``.pro``, GHDL Studio
    tries to open it in Surfer / the Waveforms tab
 
 Normal mode still supports OSVVM VHDL testbenches via **OSVVM lib path** (`-P`)
@@ -315,9 +323,11 @@ Files in `examples/adder/`:
 
 #### Normal GHDL mode (manual files + `-P`)
 
-1. Precompile OSVVM for GHDL (vendor script or OSVVM TCL) and set
-   **Settings → OSVVM lib path** to the directory that contains the compiled
-   OSVVM libraries (`-P` search path)
+1. Set **Settings → OSVVM Scripts path** (and TCL / GHDL), then use
+   **Simulation → Precompile OSVVM library…** to compile `osvvm` (RandomPkg,
+   Scoreboard, …) into a library directory. Tick **set OSVVM lib path (-P)**
+   so Analyze finds `use osvvm.RandomPkg.all`. You can also point
+   **OSVVM lib path** manually at an existing `VHDL_LIBS/GHDL-*` folder.
 2. Add `examples/adder/adder.vhd`, then `examples/adder/adder_tb.vhd`
 3. Select top-level entity `adder_tb` (stop time can stay empty — the TB calls
    `std.env.stop`)
@@ -344,9 +354,18 @@ Files in `examples/adder/`:
 5. After a successful build, the **OSVVM Report** tab loads the HTML report
    from **Settings → OSVVM HTML report** (default
    `build/build_all/build_all.html` relative to the `.pro` directory; absolute
-   paths are supported). Use **Simulation → Open OSVVM HTML report** to reopen
-   it. Example absolute path:
-   `…/test/vhdl/build/build_all/build_all.html`.
+   paths are supported; `build_all_windows/…` is also tried). Use
+   **Simulation → Open OSVVM HTML report** to reopen it.
+
+**Windows / mcode GHDL notes**
+
+- Official Windows GHDL is usually **mcode**. OSVVM `SetCoverageSimulateEnable true`
+  then produces `ghdl --elab-run … -o … -Wl,-lgcov`, which mcode rejects
+  (`unknown command option '-o'`). GHDL Studio detects mcode and forces
+  coverage off so `.pro` coverage settings are ignored safely.
+- `cannot load package "randompkg"` means the linked `osvvm` GHDL library is
+  missing or empty — use **Precompile OSVVM library…** into your
+  `osvvm_ghdl` directory (parent of `VHDL_LIBS`), then rebuild.
 
 Successful **OSVVM mode** run of `examples/adder/adder.pro`
 (**Build .pro (OSVVM)** — 13 affirmations passed, exit code 0):

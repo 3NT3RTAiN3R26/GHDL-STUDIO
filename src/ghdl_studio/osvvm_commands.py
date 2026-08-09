@@ -22,6 +22,11 @@ MODE_NORMAL = "normal"
 MODE_OSVVM = "osvvm"
 STUDIO_MODES = (MODE_NORMAL, MODE_OSVVM)
 
+# Precompile targets for Simulation → Precompile OSVVM library…
+PRECOMPILE_OSVVM = "osvvm"
+PRECOMPILE_ALL = "all"
+PRECOMPILE_TARGETS = (PRECOMPILE_OSVVM, PRECOMPILE_ALL)
+
 STARTUP_TCL_NAME = "StartUp.tcl"
 
 # Default HTML report path relative to the directory that contains the .pro
@@ -32,6 +37,8 @@ DEFAULT_OSVVM_HTML_REPORT = "build/build_all/build_all.html"
 OSVVM_HTML_REPORT_FALLBACKS = (
     "build/build_all/build_all.html",
     "build_all/build_all.html",
+    "build/build_all_windows/build_all_windows.html",
+    "build_all_windows/build_all_windows.html",
     "index.html",
 )
 
@@ -111,7 +118,273 @@ def resolve_osvvm_html_report(
     return primary
 
 
-def build_osvvm_batch_script(startup_tcl: str, pro_file: str) -> str:
+def ghdl_bin_directory(ghdl_executable: str | None) -> str | None:
+    """Return the directory containing the configured GHDL executable, if any.
+
+    Backslashes are normalised so Windows paths from Settings stay valid when
+    quoted into TCL (and so unit tests on POSIX can assert on ``C:/…`` forms).
+    """
+    raw = (ghdl_executable or "").strip()
+    if not raw:
+        return None
+    path = Path(raw.replace("\\", "/")).expanduser()
+    if path.is_dir():
+        try:
+            return str(path.resolve()).replace("\\", "/")
+        except OSError:
+            return str(path).replace("\\", "/")
+    parent = path.parent
+    if str(parent) in ("", "."):
+        return None
+    try:
+        if path.is_absolute():
+            return str(parent.resolve()).replace("\\", "/")
+    except OSError:
+        pass
+    return str(parent).replace("\\", "/")
+
+
+def resolve_ghdl_executable_path(ghdl_executable: str | None) -> str | None:
+    """Resolve a concrete GHDL binary path for OSVVM / Windows shims.
+
+    Prefers Settings, then ``PATH``. On Windows, prefers ``ghdl.exe`` over an
+    extensionless ``ghdl`` next to it (``where`` often lists both).
+    """
+    raw = (ghdl_executable or "").strip()
+    if raw:
+        path = Path(raw.replace("\\", "/")).expanduser()
+        if path.is_dir():
+            for name in ("ghdl.exe", "ghdl"):
+                candidate = path / name
+                if candidate.is_file():
+                    return str(candidate.resolve()).replace("\\", "/")
+            return None
+        exe_sibling = Path(str(path) + ".exe") if path.suffix == "" else path.with_suffix(".exe")
+        if path.suffix.lower() != ".exe" and exe_sibling.is_file():
+            return str(exe_sibling.resolve()).replace("\\", "/")
+        if path.is_file():
+            return str(path.resolve()).replace("\\", "/")
+        # Keep configured path even if missing (user machine / cross-OS tests).
+        if path.suffix.lower() != ".exe" and path.suffix == "":
+            return (str(path) + ".exe").replace("\\", "/")
+        return str(path).replace("\\", "/")
+    found = shutil.which("ghdl")
+    return found.replace("\\", "/") if found else None
+
+
+_WHICH_CMD_BODY = """@echo off
+setlocal EnableExtensions
+rem Unix `which` returns a single path. `where` prints every match; OSVVM then
+rem does `exec $ghdl --version` and breaks on multi-line / spaced paths.
+if /I "%~1"=="ghdl" if exist "%~dp0ghdl.cmd" (
+  echo %~dp0ghdl.cmd
+  exit /b 0
+)
+for /f "delims=" %%i in ('where %* 2^>nul') do (
+  echo %%i
+  exit /b 0
+)
+exit /b 1
+"""
+
+
+def install_windows_osvvm_shims(
+    shim_dir: str | Path,
+    ghdl_executable: str | None = None,
+) -> Path:
+    """Write ``which.cmd`` + optional ``ghdl.cmd`` into ``shim_dir``.
+
+    ``ghdl.cmd`` lives in a space-free directory and invokes the real GHDL with
+    quotes, so Tcl ``exec $ghdl --version`` works when GHDL is under
+    ``Program Files``.
+    """
+    directory = Path(shim_dir)
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "which.cmd").write_text(_WHICH_CMD_BODY, encoding="utf-8", newline="\r\n")
+
+    target = resolve_ghdl_executable_path(ghdl_executable)
+    if target:
+        bat_path = target.replace("/", "\\")
+        (directory / "ghdl.cmd").write_text(
+            f'@echo off\r\n"{bat_path}" %*\r\n',
+            encoding="utf-8",
+            newline="\r\n",
+        )
+    return directory.resolve()
+
+
+def build_osvvm_env_bootstrap(
+    ghdl_executable: str | None = None,
+    *,
+    windows_shim_dir: str | None = None,
+) -> str:
+    """Return TCL that prepares PATH before ``source StartUp.tcl``.
+
+    OSVVM ``VendorScripts_GHDL.tcl`` runs ``exec which ghdl`` then
+    ``exec $ghdl --version``. Native Windows has no ``which``, and ``where``
+    can return multiple paths (and paths with spaces). When
+    ``windows_shim_dir`` is set (see :func:`install_windows_osvvm_shims`), that
+    directory is prepended on Windows so OSVVM sees a single space-free
+    ``ghdl.cmd``. The Settings GHDL directory is also prepended on all
+    platforms as a fallback.
+    """
+    bin_dir = ghdl_bin_directory(ghdl_executable)
+    ghdl_dir_tcl = tcl_quote(bin_dir) if bin_dir else '""'
+    shim_tcl = tcl_quote(str(Path(windows_shim_dir).resolve())) if windows_shim_dir else '""'
+    return f"""# GHDL Studio: PATH + Windows which/ghdl shims for OSVVM VendorScripts_GHDL.tcl
+set _gsGhdlDir {ghdl_dir_tcl}
+set _gsShimDir {shim_tcl}
+set _gsPrepend ""
+if {{$::tcl_platform(platform) eq "windows" && $_gsShimDir ne ""}} {{
+  set _gsPrepend $_gsShimDir
+  puts "GHDL Studio: using Windows which/ghdl shims in $_gsShimDir"
+}}
+if {{$_gsGhdlDir ne ""}} {{
+  if {{$_gsPrepend ne ""}} {{
+    if {{$::tcl_platform(platform) eq "windows"}} {{
+      set _gsPrepend "$_gsPrepend;$_gsGhdlDir"
+    }} else {{
+      set _gsPrepend "$_gsPrepend:$_gsGhdlDir"
+    }}
+  }} else {{
+    set _gsPrepend $_gsGhdlDir
+  }}
+  puts "GHDL Studio: GHDL directory on PATH: $_gsGhdlDir"
+}}
+if {{$_gsPrepend ne ""}} {{
+  if {{$::tcl_platform(platform) eq "windows"}} {{
+    set ::env(PATH) "$_gsPrepend;$::env(PATH)"
+  }} else {{
+    set ::env(PATH) "$_gsPrepend:$::env(PATH)"
+  }}
+}}
+"""
+
+
+def build_osvvm_mcode_coverage_guard_tcl() -> str:
+    """Return TCL that forces OSVVM coverage off when GHDL is mcode.
+
+    Official Windows GHDL builds are usually **mcode**. OSVVM coverage then
+    emits ``ghdl --elab-run … -o … -Wl,-lgcov``, which mcode rejects with
+    ``unknown command option '-o'``. Project ``.pro`` files that call
+    ``SetCoverageSimulateEnable true`` are intercepted after StartUp.
+    """
+    return r"""# GHDL Studio: disable OSVVM coverage on mcode GHDL (no -o / -Wl support)
+namespace eval ::ghdlStudio {}
+set ::ghdlStudio::mcodeGhdl 0
+set ::ghdlStudio::ghdlVersion ""
+if {[catch {set ::ghdlStudio::ghdlVersion [exec ghdl --version]}]} {
+  catch {set ::ghdlStudio::ghdlVersion [exec ghdl -v]}
+}
+if {[string match -nocase "*mcode*" $::ghdlStudio::ghdlVersion]} {
+  set ::ghdlStudio::mcodeGhdl 1
+}
+proc ::ghdlStudio::wrapCoverageOff {procName} {
+  if {[llength [info commands $procName]] == 0} {
+    return
+  }
+  set orig ::ghdlStudio::orig_$procName
+  if {[llength [info commands $orig]]} {
+    return
+  }
+  rename $procName $orig
+  proc $procName {{Enable true}} [string map [list %ORIG% $orig %NAME% $procName] {
+    if {$::ghdlStudio::mcodeGhdl} {
+      puts "GHDL Studio: %NAME% $Enable ignored (mcode GHDL cannot use coverage -o/-Wl)"
+      %ORIG% false
+    } else {
+      %ORIG% $Enable
+    }
+  }]
+}
+if {$::ghdlStudio::mcodeGhdl} {
+  puts "GHDL Studio: mcode GHDL detected — OSVVM code coverage will be forced off"
+  foreach _gsCov {SetCoverageEnable SetCoverageAnalyzeEnable SetCoverageSimulateEnable} {
+    ::ghdlStudio::wrapCoverageOff $_gsCov
+  }
+  catch {SetCoverageEnable false}
+  catch {SetCoverageAnalyzeEnable false}
+  catch {SetCoverageSimulateEnable false}
+}
+"""
+
+
+def osvvm_library_has_randompkg(lib_dir: str | Path) -> bool:
+    """Return True if ``lib_dir`` looks like a compiled GHDL ``osvvm`` tree."""
+    root = Path(lib_dir).expanduser()
+    if not root.is_dir():
+        return False
+    patterns = (
+        "osvvm/**/*.cf",
+        "osvvm/**/*RandomPkg*",
+        "osvvm/**/*randompkg*",
+        "**/osvvm-obj*.cf",
+        "osvvm/v08/**",
+    )
+    for pattern in patterns:
+        try:
+            if any(root.glob(pattern)):
+                return True
+        except OSError:
+            continue
+    return False
+
+
+def diagnose_osvvm_randompkg(
+    pro_file: str,
+    *,
+    osvvm_lib_path: str = "",
+) -> list[str]:
+    """Return human-readable warnings when RandomPkg likely cannot load."""
+    warnings: list[str] = []
+    candidates: list[Path] = []
+    configured = (osvvm_lib_path or "").strip()
+    if configured:
+        candidates.append(Path(configured).expanduser())
+    pro_dir = Path(pro_file).expanduser().resolve().parent
+    for root in (pro_dir / "osvvm_ghdl", pro_dir.parent / "osvvm_ghdl"):
+        if root.is_dir():
+            candidates.append(root)
+            candidates.extend(sorted(root.glob("VHDL_LIBS/GHDL-*")))
+
+    seen: set[str] = set()
+    found_compiled = False
+    checked_any = False
+    for candidate in candidates:
+        key = str(candidate.resolve()) if candidate.exists() else str(candidate)
+        if key in seen:
+            continue
+        seen.add(key)
+        if not candidate.is_dir():
+            continue
+        checked_any = True
+        if osvvm_library_has_randompkg(candidate):
+            found_compiled = True
+            break
+
+    if checked_any and not found_compiled:
+        warnings.append(
+            "OSVVM RandomPkg does not look compiled under osvvm_ghdl / OSVVM lib path.\n"
+            "Analyze will fail with: cannot load package \"randompkg\".\n"
+            "Fix: Simulation → Precompile OSVVM library… with library directory "
+            "set to your osvvm_ghdl folder (the parent of VHDL_LIBS)."
+        )
+    elif not checked_any and not configured:
+        warnings.append(
+            "No OSVVM lib path / osvvm_ghdl folder found next to the .pro.\n"
+            "If testbenches use osvvm.RandomPkg, run Simulation → "
+            "Precompile OSVVM library… first (or LinkLibraryDirectory in the .pro)."
+        )
+    return warnings
+
+
+def build_osvvm_batch_script(
+    startup_tcl: str,
+    pro_file: str,
+    *,
+    ghdl_executable: str | None = None,
+    windows_shim_dir: str | None = None,
+) -> str:
     """Return TCL source that loads OSVVM Scripts and builds a ``.pro`` file.
 
     ``build`` may raise after a successful simulate when HTML/YAML index
@@ -123,11 +396,16 @@ def build_osvvm_batch_script(startup_tcl: str, pro_file: str) -> str:
         raise ValueError("OSVVM StartUp.tcl path is required.")
     if not pro_file:
         raise ValueError("A .pro file path is required.")
+    bootstrap = build_osvvm_env_bootstrap(
+        ghdl_executable,
+        windows_shim_dir=windows_shim_dir,
+    )
+    mcode_guard = build_osvvm_mcode_coverage_guard_tcl()
     startup_q = tcl_quote(str(Path(startup_tcl).resolve()))
     pro_q = tcl_quote(str(Path(pro_file).resolve()))
     return f"""# Generated by GHDL Studio — do not edit
-source {startup_q}
-# Do not fail the process solely because HTML/YAML reports misbehave.
+{bootstrap}source {startup_q}
+{mcode_guard}# Do not fail the process solely because HTML/YAML reports misbehave.
 if {{[info exists ::osvvm::FailOnReportErrors]}} {{
   set ::osvvm::FailOnReportErrors false
 }}
@@ -174,11 +452,16 @@ def prepare_osvvm_run(
     startup_tcl: str,
     pro_file: str,
     script_dir: str | None = None,
+    ghdl_executable: str | None = None,
 ) -> OsvvmRunPlan:
     """Write a temporary batch TCL script and return the run plan.
 
     ``cwd`` is the directory containing the ``.pro`` file so relative includes
     and GHDL work directories behave like a manual OSVVM Scripts session.
+
+    ``ghdl_executable`` (optional) is the Settings GHDL path; its directory is
+    prepended to ``PATH`` inside the batch script, and on Windows a ``which``
+    shim is installed so OSVVM's VendorScripts can locate GHDL.
     """
     pro_path = Path(pro_file).resolve()
     if not pro_path.is_file():
@@ -189,10 +472,22 @@ def prepare_osvvm_run(
     if not tclsh:
         raise ValueError("tclsh executable is required.")
 
-    content = build_osvvm_batch_script(str(startup), str(pro_path))
-    directory = script_dir or tempfile.gettempdir()
-    Path(directory).mkdir(parents=True, exist_ok=True)
-    script_file = Path(directory) / "ghdl_studio_osvvm_run.tcl"
+    directory = Path(script_dir or tempfile.gettempdir())
+    directory.mkdir(parents=True, exist_ok=True)
+    # Always materialise Windows shims next to the batch script. On non-Windows
+    # hosts they are unused at runtime but keep the batch script self-contained
+    # and unit-testable. On Windows, PATH prepend makes OSVVM use them.
+    shim_dir = install_windows_osvvm_shims(
+        directory / "ghdl_studio_which_shim",
+        ghdl_executable,
+    )
+    content = build_osvvm_batch_script(
+        str(startup),
+        str(pro_path),
+        ghdl_executable=ghdl_executable,
+        windows_shim_dir=str(shim_dir),
+    )
+    script_file = directory / "ghdl_studio_osvvm_run.tcl"
     script_file.write_text(content, encoding="utf-8")
 
     return OsvvmRunPlan(
@@ -200,6 +495,193 @@ def prepare_osvvm_run(
         script_path=str(script_file.resolve()),
         cwd=str(pro_path.parent),
         command_display=f"{tclsh} {script_file.resolve()}  # build {pro_path.name}",
+    )
+
+
+def resolve_osvvm_home_directory(scripts_or_startup: str) -> Path | None:
+    """Return the OsvvmLibraries root for a Scripts path or ``StartUp.tcl``."""
+    raw = (scripts_or_startup or "").strip()
+    if not raw:
+        return None
+    path = Path(raw).expanduser()
+    if path.is_file() and path.name == STARTUP_TCL_NAME:
+        # …/OsvvmLibraries/Scripts/StartUp.tcl → …/OsvvmLibraries
+        return path.resolve().parent.parent
+    startup = resolve_startup_tcl(raw)
+    if startup is None:
+        return None
+    return startup.parent.parent
+
+
+def resolve_osvvm_precompile_target(
+    osvvm_home: str | Path,
+    target: str = PRECOMPILE_OSVVM,
+) -> Path:
+    """Resolve the ``.pro`` / directory path passed to OSVVM ``build``.
+
+    ``osvvm`` → ``…/OsvvmLibraries/osvvm`` (utility library, includes RandomPkg).
+    ``all`` → ``…/OsvvmLibraries/OsvvmLibraries.pro`` when present, else the home dir.
+    """
+    home = Path(osvvm_home).expanduser().resolve()
+    normalised = (target or PRECOMPILE_OSVVM).strip().lower()
+    if normalised not in PRECOMPILE_TARGETS:
+        raise ValueError(
+            f"Unknown precompile target {target!r}; expected one of {PRECOMPILE_TARGETS}."
+        )
+    if normalised == PRECOMPILE_OSVVM:
+        util = home / "osvvm"
+        if not util.is_dir():
+            raise FileNotFoundError(
+                f"OSVVM utility library not found at '{util}'.\n"
+                "Clone OsvvmLibraries with submodules:\n"
+                "  git clone --recursive https://github.com/OSVVM/OsvvmLibraries\n"
+                "Or:  cd OsvvmLibraries && git submodule update --init osvvm"
+            )
+        return util
+    pro = home / "OsvvmLibraries.pro"
+    if pro.is_file():
+        return pro
+    return home
+
+
+def find_compiled_ghdl_lib_dir(library_directory: str) -> Path | None:
+    """Locate ``VHDL_LIBS/GHDL-*`` under an OSVVM ``SetLibraryDirectory`` root.
+
+    That directory is what Normal mode should pass as ``-P`` (it contains
+    compiled ``osvvm/``, ``work/``, …).
+    """
+    root = Path(library_directory).expanduser()
+    if not root.is_dir():
+        return None
+    resolved = root.resolve()
+    if resolved.name.startswith("GHDL-") and (resolved / "osvvm").is_dir():
+        return resolved
+    if resolved.name == "VHDL_LIBS":
+        candidates = sorted(
+            (p for p in resolved.glob("GHDL-*") if p.is_dir()),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        return candidates[0] if candidates else None
+    vhdl_libs = resolved / "VHDL_LIBS"
+    if vhdl_libs.is_dir():
+        candidates = sorted(
+            (p for p in vhdl_libs.glob("GHDL-*") if p.is_dir()),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        if candidates:
+            return candidates[0]
+    # Already pointing at a tool lib dir that contains osvvm/
+    if (resolved / "osvvm").is_dir():
+        return resolved
+    return None
+
+
+def build_osvvm_precompile_script(
+    startup_tcl: str,
+    *,
+    library_directory: str,
+    target: str = PRECOMPILE_OSVVM,
+    ghdl_executable: str | None = None,
+    windows_shim_dir: str | None = None,
+) -> str:
+    """Return TCL that ``SetLibraryDirectory`` + ``build`` OSVVM for GHDL."""
+    if not startup_tcl:
+        raise ValueError("OSVVM StartUp.tcl path is required.")
+    lib_dir = (library_directory or "").strip()
+    if not lib_dir:
+        raise ValueError("A library directory (SetLibraryDirectory) is required.")
+    startup_path = Path(startup_tcl).resolve()
+    if not startup_path.is_file():
+        raise FileNotFoundError(f"StartUp.tcl not found: {startup_tcl}")
+    home = resolve_osvvm_home_directory(str(startup_path))
+    if home is None:
+        raise FileNotFoundError(
+            f"Could not resolve OsvvmLibraries home from StartUp.tcl: {startup_tcl}"
+        )
+    build_target = resolve_osvvm_precompile_target(home, target)
+
+    bootstrap = build_osvvm_env_bootstrap(
+        ghdl_executable,
+        windows_shim_dir=windows_shim_dir,
+    )
+    mcode_guard = build_osvvm_mcode_coverage_guard_tcl()
+    startup_q = tcl_quote(str(startup_path))
+    lib_q = tcl_quote(str(Path(lib_dir).expanduser().resolve()))
+    target_q = tcl_quote(str(build_target.resolve()))
+    return f"""# Generated by GHDL Studio — precompile OSVVM for GHDL
+{bootstrap}source {startup_q}
+{mcode_guard}SetLibraryDirectory {lib_q}
+puts "GHDL Studio: SetLibraryDirectory={lib_q}"
+puts "GHDL Studio: building {target_q}"
+if {{[info exists ::osvvm::FailOnReportErrors]}} {{
+  set ::osvvm::FailOnReportErrors false
+}}
+set _ghdlStudioBuildRc [catch {{build {target_q}}} _ghdlStudioBuildMsg]
+set _ghdlStudioAnalyzeErr 0
+if {{[info exists ::osvvm::AnalyzeErrorCount]}} {{
+  set _ghdlStudioAnalyzeErr $::osvvm::AnalyzeErrorCount
+}}
+if {{[info exists ::osvvm::BuildStatus]}} {{
+  puts "GHDL Studio: BuildStatus=$::osvvm::BuildStatus AnalyzeErrors=$_ghdlStudioAnalyzeErr"
+}}
+if {{$_ghdlStudioAnalyzeErr > 0}} {{
+  puts "GHDL Studio: OSVVM precompile failed (analyze errors)."
+  if {{$_ghdlStudioBuildRc}} {{
+    puts $_ghdlStudioBuildMsg
+  }}
+  exit 1
+}}
+if {{$_ghdlStudioBuildRc}} {{
+  puts "GHDL Studio: analyze OK; ignoring post-build report error:"
+  puts $_ghdlStudioBuildMsg
+}}
+puts "GHDL Studio: OSVVM precompile finished."
+puts "GHDL Studio: set Settings → OSVVM lib path (-P) to the VHDL_LIBS/GHDL-* folder under the library directory."
+exit 0
+"""
+
+
+def prepare_osvvm_precompile_run(
+    *,
+    tclsh: str,
+    startup_tcl: str,
+    library_directory: str,
+    target: str = PRECOMPILE_OSVVM,
+    script_dir: str | None = None,
+    ghdl_executable: str | None = None,
+) -> OsvvmRunPlan:
+    """Write a temporary TCL script that precompiles OSVVM into ``library_directory``."""
+    if not tclsh:
+        raise ValueError("tclsh executable is required.")
+    lib_path = Path(library_directory).expanduser()
+    lib_path.mkdir(parents=True, exist_ok=True)
+    lib_resolved = lib_path.resolve()
+
+    directory = Path(script_dir or tempfile.gettempdir())
+    directory.mkdir(parents=True, exist_ok=True)
+    shim_dir = install_windows_osvvm_shims(
+        directory / "ghdl_studio_which_shim",
+        ghdl_executable,
+    )
+    content = build_osvvm_precompile_script(
+        startup_tcl,
+        library_directory=str(lib_resolved),
+        target=target,
+        ghdl_executable=ghdl_executable,
+        windows_shim_dir=str(shim_dir),
+    )
+    script_file = directory / "ghdl_studio_osvvm_precompile.tcl"
+    script_file.write_text(content, encoding="utf-8")
+
+    return OsvvmRunPlan(
+        tclsh=tclsh,
+        script_path=str(script_file.resolve()),
+        cwd=str(lib_resolved),
+        command_display=(
+            f"{tclsh} {script_file.resolve()}  # precompile OSVVM ({target}) → {lib_resolved}"
+        ),
     )
 
 

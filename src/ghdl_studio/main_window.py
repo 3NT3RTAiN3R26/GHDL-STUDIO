@@ -42,8 +42,11 @@ from ghdl_studio.ghdl_runner import GhdlRunner
 from ghdl_studio.osvvm_commands import (
     MODE_NORMAL,
     MODE_OSVVM,
+    diagnose_osvvm_randompkg,
+    find_compiled_ghdl_lib_dir,
     find_recent_waveform,
     find_tclsh_executable,
+    prepare_osvvm_precompile_run,
     prepare_osvvm_run,
     resolve_osvvm_html_report,
     resolve_startup_tcl,
@@ -61,6 +64,7 @@ from ghdl_studio.widgets.code_editor import CodeEditor
 from ghdl_studio.widgets.file_explorer import FileExplorer
 from ghdl_studio.widgets.html_report_view import HtmlReportView
 from ghdl_studio.widgets.log_console import LogConsole, is_osvvm_transcript_line
+from ghdl_studio.widgets.precompile_osvvm_dialog import PrecompileOsvvmDialog
 from ghdl_studio.widgets.run_settings_dialog import RunSettingsDialog
 from ghdl_studio.widgets.startup_mode_dialog import StartupModeDialog
 from ghdl_studio.widgets.waveform_viewer import WaveformViewer
@@ -82,6 +86,8 @@ class MainWindow(QMainWindow):
         self._mode = mode if mode in (MODE_NORMAL, MODE_OSVVM) else MODE_NORMAL
         self._pro_path = str(Path(pro_path).resolve()) if pro_path else ""
         self._osvvm_run_started_at: float | None = None
+        self._pending_precompile_lib_dir: str | None = None
+        self._pending_precompile_update_path: bool = False
         self._run_options = RunOptions(
             std=self._settings.vhdl_std,
             output_dir=self._settings.output_dir,
@@ -211,6 +217,14 @@ class MainWindow(QMainWindow):
         self._build_pro_action.triggered.connect(self._start_osvvm_build)
         run_menu.addAction(self._build_pro_action)
 
+        self._precompile_osvvm_action = QAction("Precompile OSVVM library…", self)
+        self._precompile_osvvm_action.setToolTip(
+            "Compile osvvm (RandomPkg, …) into VHDL_LIBS/GHDL-* for Normal mode -P. "
+            "Requires tclsh and Settings → OSVVM Scripts path."
+        )
+        self._precompile_osvvm_action.triggered.connect(self._start_osvvm_precompile)
+        run_menu.addAction(self._precompile_osvvm_action)
+
         self._open_html_report_action = QAction("Open OSVVM HTML report", self)
         self._open_html_report_action.triggered.connect(self._open_osvvm_html_report)
         run_menu.addAction(self._open_html_report_action)
@@ -249,6 +263,7 @@ class MainWindow(QMainWindow):
         toolbar.addAction(self._elaborate_action)
         toolbar.addAction(self._run_action)
         toolbar.addAction(self._build_pro_action)
+        toolbar.addAction(self._precompile_osvvm_action)
         toolbar.addAction(self._all_action)
         toolbar.addSeparator()
         toolbar.addAction(self._stop_action)
@@ -385,10 +400,17 @@ class MainWindow(QMainWindow):
                 tclsh=tclsh,
                 startup_tcl=startup,
                 pro_file=self._pro_path,
+                ghdl_executable=self._settings.ghdl_executable,
             )
         except (OSError, ValueError) as exc:
             QMessageBox.warning(self, "OSVVM build", str(exc))
             return
+
+        for warning in diagnose_osvvm_randompkg(
+            self._pro_path,
+            osvvm_lib_path=self._settings.osvvm_lib_path,
+        ):
+            self._log_console.append_error(warning)
 
         # Prefer mtime floor from "now" so we pick waves written by this run.
         self._osvvm_run_started_at = time.time() - 1.0
@@ -398,6 +420,83 @@ class MainWindow(QMainWindow):
             f"Batch script: {plan.script_path}"
         )
         self._runner.run(plan.tclsh, [plan.script_path], cwd=plan.cwd, label="OSVVM Build")
+
+    def _start_osvvm_precompile(self) -> None:
+        """Compile OSVVM into a GHDL library directory via OSVVM Scripts."""
+        self._pending_chain = []
+        tclsh = self._tcl_executable_or_warn()
+        if not tclsh:
+            return
+        startup = self._startup_tcl_or_warn()
+        if not startup:
+            return
+        if self._runner.is_running:
+            QMessageBox.warning(
+                self,
+                "Busy",
+                "A process is already running. Stop it before starting another.",
+            )
+            return
+
+        dialog = PrecompileOsvvmDialog(
+            self._settings,
+            default_library_directory=self._project_root_directory(),
+            parent=self,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        try:
+            plan = prepare_osvvm_precompile_run(
+                tclsh=tclsh,
+                startup_tcl=startup,
+                library_directory=dialog.library_directory,
+                target=dialog.target,
+                ghdl_executable=self._settings.ghdl_executable,
+            )
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "Precompile OSVVM", str(exc))
+            return
+
+        self._pending_precompile_lib_dir = dialog.library_directory
+        self._pending_precompile_update_path = dialog.update_osvvm_lib_path
+        self._log_console.append_output(
+            f"OSVVM precompile ({dialog.target})\n"
+            f"Library directory: {plan.cwd}\n"
+            f"Batch script: {plan.script_path}\n"
+            f"StartUp.tcl: {startup}"
+        )
+        self._runner.run(
+            plan.tclsh,
+            [plan.script_path],
+            cwd=plan.cwd,
+            label="OSVVM Precompile",
+        )
+
+    def _apply_precompile_lib_path(self) -> None:
+        """Point Normal-mode -P at VHDL_LIBS/GHDL-* after a successful precompile."""
+        lib_dir = self._pending_precompile_lib_dir
+        update = self._pending_precompile_update_path
+        self._pending_precompile_lib_dir = None
+        self._pending_precompile_update_path = False
+        if not update or not lib_dir:
+            return
+        compiled = find_compiled_ghdl_lib_dir(lib_dir)
+        if compiled is None:
+            self._log_console.append_output(
+                "OSVVM precompile finished, but VHDL_LIBS/GHDL-* was not found yet.\n"
+                f"Look under: {lib_dir}\n"
+                "Set Settings → OSVVM lib path (-P) manually when the folder appears."
+            )
+            return
+        path = str(compiled)
+        self._settings.osvvm_lib_path = path
+        self._run_options.osvvm_lib_path = path
+        self._log_console.append_success(
+            f"Settings → OSVVM lib path (-P) set to:\n{path}\n"
+            "Normal mode Analyze/Elaborate/Run will use this library "
+            "(e.g. use osvvm.RandomPkg.all)."
+        )
 
     def _create_simulation_bar(self) -> None:
         """Erstellt eine zweite, auf der Hauptseite sichtbare Werkzeugleiste
@@ -814,6 +913,8 @@ class MainWindow(QMainWindow):
             elif label == "OSVVM Build":
                 self._try_load_osvvm_waveform()
                 self._open_osvvm_html_report()
+            elif label == "OSVVM Precompile":
+                self._apply_precompile_lib_path()
             if self._pending_chain:
                 next_step = self._pending_chain.pop(0)
                 if next_step == "Elaborate":
@@ -825,6 +926,9 @@ class MainWindow(QMainWindow):
         else:
             self._pending_chain = []
             self._pending_after_run = None
+            if label == "OSVVM Precompile":
+                self._pending_precompile_lib_dir = None
+                self._pending_precompile_update_path = False
             self._log_console.append_error(f"[{label}] finished with error code {exit_code}.")
 
     def _try_load_osvvm_waveform(self) -> None:
