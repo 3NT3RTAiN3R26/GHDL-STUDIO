@@ -42,6 +42,7 @@ from ghdl_studio.ghdl_runner import GhdlRunner
 from ghdl_studio.osvvm_commands import (
     MODE_NORMAL,
     MODE_OSVVM,
+    diagnose_osvvm_randompkg,
     find_compiled_ghdl_lib_dir,
     find_recent_waveform,
     find_tclsh_executable,
@@ -404,6 +405,12 @@ class MainWindow(QMainWindow):
         except (OSError, ValueError) as exc:
             QMessageBox.warning(self, "OSVVM build", str(exc))
             return
+
+        for warning in diagnose_osvvm_randompkg(
+            self._pro_path,
+            osvvm_lib_path=self._settings.osvvm_lib_path,
+        ):
+            self._log_console.append_error(warning)
 
         # Prefer mtime floor from "now" so we pick waves written by this run.
         self._osvvm_run_started_at = time.time() - 1.0

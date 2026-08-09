@@ -354,9 +354,18 @@ Files in `examples/adder/`:
 5. After a successful build, the **OSVVM Report** tab loads the HTML report
    from **Settings → OSVVM HTML report** (default
    `build/build_all/build_all.html` relative to the `.pro` directory; absolute
-   paths are supported). Use **Simulation → Open OSVVM HTML report** to reopen
-   it. Example absolute path:
-   `…/test/vhdl/build/build_all/build_all.html`.
+   paths are supported; `build_all_windows/…` is also tried). Use
+   **Simulation → Open OSVVM HTML report** to reopen it.
+
+**Windows / mcode GHDL notes**
+
+- Official Windows GHDL is usually **mcode**. OSVVM `SetCoverageSimulateEnable true`
+  then produces `ghdl --elab-run … -o … -Wl,-lgcov`, which mcode rejects
+  (`unknown command option '-o'`). GHDL Studio detects mcode and forces
+  coverage off so `.pro` coverage settings are ignored safely.
+- `cannot load package "randompkg"` means the linked `osvvm` GHDL library is
+  missing or empty — use **Precompile OSVVM library…** into your
+  `osvvm_ghdl` directory (parent of `VHDL_LIBS`), then rebuild.
 
 Successful **OSVVM mode** run of `examples/adder/adder.pro`
 (**Build .pro (OSVVM)** — 13 affirmations passed, exit code 0):

@@ -11,12 +11,15 @@ from ghdl_studio.osvvm_commands import (
     STUDIO_MODES,
     build_osvvm_batch_script,
     build_osvvm_env_bootstrap,
+    build_osvvm_mcode_coverage_guard_tcl,
     build_osvvm_precompile_script,
+    diagnose_osvvm_randompkg,
     find_compiled_ghdl_lib_dir,
     find_recent_waveform,
     ghdl_bin_directory,
     install_windows_osvvm_shims,
     is_pro_file,
+    osvvm_library_has_randompkg,
     prepare_osvvm_precompile_run,
     prepare_osvvm_run,
     resolve_ghdl_executable_path,
@@ -106,6 +109,35 @@ def test_build_osvvm_env_bootstrap_windows_which_shim_and_path(tmp_path):
     assert bootstrap.index("_gsShimDir") < bootstrap.index("set ::env(PATH)")
 
 
+def test_mcode_coverage_guard_wraps_set_coverage():
+    guard = build_osvvm_mcode_coverage_guard_tcl()
+    assert "mcode" in guard
+    assert "SetCoverageSimulateEnable" in guard
+    assert "wrapCoverageOff" in guard
+    assert "-o" in guard
+
+
+def test_osvvm_library_has_randompkg(tmp_path):
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    assert not osvvm_library_has_randompkg(empty)
+    compiled = tmp_path / "VHDL_LIBS" / "GHDL-6.0.0"
+    (compiled / "osvvm" / "v08").mkdir(parents=True)
+    (compiled / "osvvm" / "osvvm-obj08.cf").write_text("x", encoding="utf-8")
+    assert osvvm_library_has_randompkg(compiled)
+
+
+def test_diagnose_osvvm_randompkg_warns_when_empty(tmp_path):
+    pro = tmp_path / "build" / "all.pro"
+    pro.parent.mkdir()
+    pro.write_text("build\n", encoding="utf-8")
+    lib = tmp_path / "osvvm_ghdl" / "VHDL_LIBS" / "GHDL-6.0.0"
+    lib.mkdir(parents=True)
+    warnings = diagnose_osvvm_randompkg(str(pro), osvvm_lib_path=str(lib))
+    assert warnings
+    assert "randompkg" in warnings[0].lower()
+
+
 def test_build_osvvm_batch_script_contains_source_and_build(tmp_path):
     startup = tmp_path / "StartUp.tcl"
     startup.write_text("#\n", encoding="utf-8")
@@ -124,6 +156,9 @@ def test_build_osvvm_batch_script_contains_source_and_build(tmp_path):
     assert "demo.pro}" in script
     # Windows shim PATH setup must run before StartUp.tcl (VendorScripts_GHDL).
     assert script.index("_gsShimDir") < script.index("source {")
+    # mcode coverage guard runs after StartUp so it can wrap SetCoverage*.
+    assert script.index("source {") < script.index("wrapCoverageOff")
+    assert script.index("wrapCoverageOff") < script.index("catch {build")
     # Wrapper must tolerate OSVVM report failures after a PASSED simulate.
     assert "catch {build" in script
     assert "AnalyzeErrorCount" in script
