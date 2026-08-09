@@ -29,6 +29,10 @@ def test_dark_stylesheet_mentions_core_widgets():
     assert "combo_down_arrow.png" in sheet
     # Qt braucht einen echten Dateipfad; data:-URIs fuer SVG werden oft ignoriert
     assert "url(data:" not in sheet
+    # Unselected radios/checkboxes need an explicit light outline on dark Fusion.
+    assert "QRadioButton::indicator:unchecked" in sheet
+    assert "QCheckBox::indicator:unchecked" in sheet
+    assert "border-radius: 8px" in sheet
 
 
 def test_apply_dark_theme_sets_fusion_and_stylesheet(qapp):
