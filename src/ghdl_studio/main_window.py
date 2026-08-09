@@ -882,7 +882,8 @@ class MainWindow(QMainWindow):
         else:
             self._log_console.append_output(
                 f"OSVVM HTML report not found at '{report}'. "
-                "Set Settings → OSVVM HTML report (e.g. build_all/build_all.html) "
+                "Set Settings → OSVVM HTML report "
+                "(e.g. build/build_all/build_all.html or an absolute path) "
                 "to match your .pro output, then use Simulation → "
                 "Open OSVVM HTML report."
             )
