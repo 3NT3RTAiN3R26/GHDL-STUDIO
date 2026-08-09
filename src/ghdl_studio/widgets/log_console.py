@@ -119,6 +119,10 @@ class LogConsole(QTextEdit):
         self.setReadOnly(True)
         self.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
 
+    def append_command(self, text: str) -> None:
+        """Highlight an invoked command line (e.g. ``$ ghdl -a …``)."""
+        self._append(text, QColor("#569cd6"))
+
     def append_output(self, text: str) -> None:
         self._append(text, QColor("#d4d4d4"))
 
@@ -129,6 +133,10 @@ class LogConsole(QTextEdit):
 
     def append_warning(self, text: str) -> None:
         self._append(text, QColor("#dcdcaa"))
+
+    def append_success(self, text: str) -> None:
+        """Highlight a successful completion / status line."""
+        self._append(text, QColor("#4ec9b0"))
 
     def _append(self, text: str, color: QColor) -> None:
         cursor = self.textCursor()
