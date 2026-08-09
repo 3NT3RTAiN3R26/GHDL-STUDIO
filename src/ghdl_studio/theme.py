@@ -283,6 +283,60 @@ def dark_stylesheet() -> str:
         background: transparent;
         color: {_FG};
     }}
+    /* Explicit indicators: Fusion + dark palette can hide the native outline
+       on Windows (unselected radio looks like plain text). */
+    QRadioButton::indicator {{
+        width: 14px;
+        height: 14px;
+        border: 1px solid {_FG_BRIGHT};
+        border-radius: 8px;
+        background-color: transparent;
+    }}
+    QRadioButton::indicator:unchecked {{
+        border: 1px solid {_FG_BRIGHT};
+        background-color: transparent;
+    }}
+    QRadioButton::indicator:unchecked:hover {{
+        border-color: {_ACCENT_HOVER};
+    }}
+    QRadioButton::indicator:checked {{
+        border: 1px solid {_FG_BRIGHT};
+        background-color: {_FG_BRIGHT};
+    }}
+    QRadioButton::indicator:checked:hover {{
+        border-color: {_ACCENT_HOVER};
+        background-color: {_FG_BRIGHT};
+    }}
+    QRadioButton::indicator:disabled {{
+        border-color: {_FG_DISABLED};
+        background-color: transparent;
+    }}
+    QCheckBox::indicator {{
+        width: 14px;
+        height: 14px;
+        border: 1px solid {_FG_BRIGHT};
+        border-radius: 2px;
+        background-color: transparent;
+    }}
+    QCheckBox::indicator:unchecked {{
+        border: 1px solid {_FG_BRIGHT};
+        background-color: transparent;
+    }}
+    QCheckBox::indicator:unchecked:hover {{
+        border-color: {_ACCENT_HOVER};
+    }}
+    QCheckBox::indicator:checked {{
+        border: 1px solid {_FG_BRIGHT};
+        background-color: {_ACCENT};
+    }}
+    QCheckBox::indicator:checked:hover {{
+        border-color: {_ACCENT_HOVER};
+        background-color: {_ACCENT_HOVER};
+    }}
+    QCheckBox::indicator:disabled {{
+        border-color: {_FG_DISABLED};
+        background-color: transparent;
+    }}
     QGroupBox {{
         border: 1px solid {_BORDER};
         border-radius: 3px;
