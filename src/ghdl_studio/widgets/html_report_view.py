@@ -87,13 +87,10 @@ class HtmlReportView(QWidget):
             self._view.setUrl(url)
         else:
             # QTextBrowser: limited CSS; still useful without QtWebEngine.
-            try:
-                html = file_path.read_text(encoding="utf-8", errors="replace")
-            except OSError as exc:
-                self._path_label.setText(f"Could not read report: {exc}")
-                return False
+            # Use setSource for local files (resolves relative links/CSS).
+            # Note: setHtml() takes only the HTML string — no base-URL arg.
             self._view.setSearchPaths([str(file_path.parent)])
-            self._view.setHtml(html, url)
+            self._view.setSource(url)
         return True
 
     def reload(self) -> None:
