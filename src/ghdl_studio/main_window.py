@@ -6,7 +6,7 @@ import os
 import time
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QComboBox,
@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
 from ghdl_studio.ghdl_commands import (
     RunOptions,
     build_analyze_args,
+    build_clean_args,
     build_elaborate_args,
     build_run_args,
     build_simulation_option_args,
@@ -244,12 +245,13 @@ class MainWindow(QMainWindow):
         run_menu.addAction(self._stop_action)
 
         run_menu.addSeparator()
-        self._clean_action = QAction("Clean", self)
+        self._clean_action = QAction("Clean (ghdl --clean)", self)
         self._clean_action.setToolTip(
-            "Removes all generated files from the output directory "
-            "(work library, *.o, *.vcd, *.gcda/*.gcno, simulation executable)."
+            "Runs ghdl --clean on the project work directory (Normal: Studio "
+            "output/; OSVVM: directory of the .pro file). In Normal mode also "
+            "clears the Studio output folder (waveforms, executable, …)."
         )
-        self._clean_action.triggered.connect(self._on_clean_clicked)
+        self._clean_action.triggered.connect(self._run_clean)
         run_menu.addAction(self._clean_action)
 
         settings_menu = menu_bar.addMenu("&Settings")
@@ -843,39 +845,68 @@ class MainWindow(QMainWindow):
         )
         self._runner.run(executable, args, cwd=process_cwd, label="Run")
 
-    def _on_clean_clicked(self) -> None:
-        """Entspricht einem 'make clean': entfernt alle im Ausgabeverzeichnis
-        generierten Dateien (Work-Bibliothek, *.o, *.vcd, *.gcda/*.gcno,
-        Simulations-Executable), ohne das Verzeichnis selbst zu loeschen."""
+    def _run_clean(self) -> None:
+        """Toolbar/menu Clean: ``ghdl --clean`` (Normal and OSVVM modes)."""
+        self._pending_chain = []
+        self._start_clean()
+
+    def _start_clean(self) -> None:
+        """Run ``ghdl --clean`` for the active mode's work directory."""
         if self._runner.is_running:
             QMessageBox.warning(
                 self,
-                "Simulation running",
-                "Please stop the running simulation before cleaning.",
+                "Busy",
+                "Please stop the running process before cleaning.",
             )
             return
+        executable = self._ghdl_executable_or_warn()
+        if not executable:
+            return
 
-        output_dir = self._ensure_output_dir()
-        removed = clean_output_dir(output_dir)
+        if self._mode == MODE_OSVVM:
+            if not self._pro_path or not Path(self._pro_path).is_file():
+                QMessageBox.warning(
+                    self,
+                    "No .pro file",
+                    "Please open an OSVVM .pro file before cleaning.",
+                )
+                return
+            work_dir = str(Path(self._pro_path).parent.resolve())
+            library_paths = self._run_options.library_paths()
+        else:
+            work_dir = self._ensure_output_dir()
+            library_paths = self._run_options.library_paths()
 
-        # Der Surfer-Prozess bzw. die interne Wellenformanzeige zeigen
-        # ggf. eine soeben geloeschte VCD-Datei an - beides zuruecksetzen.
+        args = build_clean_args(
+            std=self._run_options.std,
+            work_dir=work_dir,
+            library_paths=library_paths,
+        )
+        self._runner.run(executable, args, cwd=work_dir, label="Clean")
+
+    def _finish_clean_side_effects(self) -> None:
+        """After ``ghdl --clean``, reset waveforms and (Normal) wipe output/."""
+        if self._mode != MODE_OSVVM:
+            output_dir = self._ensure_output_dir()
+            removed = clean_output_dir(output_dir)
+            if removed:
+                self._log_console.append_success(
+                    f"Also cleared Studio output '{output_dir}': "
+                    f"removed {len(removed)} item(s) ({', '.join(removed)})."
+                )
+            else:
+                self._log_console.append_output(
+                    f"Studio output '{output_dir}' is already empty."
+                )
+
         self._surfer_embedder.stop()
         self._clear_surfer_container()
         self._surfer_retry_button.setVisible(False)
         self._waveform_stack.setCurrentIndex(_WAVEFORM_PAGE_INTERNAL)
         self._current_vcd_path = None
-
-        if removed:
-            self._log_console.append_success(
-                f"Cleaned: removed {len(removed)} item(s) from '{output_dir}' "
-                f"({', '.join(removed)})."
-            )
-            self._waveform_status_label.setText("Output directory cleaned. No simulation has been run yet.")
-        else:
-            self._log_console.append_output(
-                f"Clean: output directory '{output_dir}' does not exist or is already empty."
-            )
+        self._waveform_status_label.setText(
+            "Clean finished. No simulation has been run yet."
+        )
 
     def _on_command_started(self, command_text: str) -> None:
         self._log_console.append_command(f"$ {command_text}")
@@ -918,6 +949,8 @@ class MainWindow(QMainWindow):
             if label == "Run" and self._pending_after_run:
                 self._try_load_waveform(self._pending_after_run)
                 self._pending_after_run = None
+            elif label == "Clean":
+                self._finish_clean_side_effects()
             elif label == "OSVVM Build":
                 self._try_load_osvvm_waveform()
                 self._open_osvvm_html_report()
@@ -1078,6 +1111,9 @@ class MainWindow(QMainWindow):
         resizer = getattr(container, "_ghdl_studio_resize_sync", None)
         if resizer is not None and hasattr(resizer, "_resize_child"):
             resizer._resize_child()
+            # Windows HiDPI / late layout: sync again after the stack page settles.
+            for delay_ms in (50, 200, 500):
+                QTimer.singleShot(delay_ms, resizer._resize_child)
         self._waveform_status_label.setText("Waveform display: Surfer (embedded).")
         self._surfer_retry_button.setVisible(False)
         self._log_console.append_success("Surfer was successfully embedded in the Waveforms tab.")

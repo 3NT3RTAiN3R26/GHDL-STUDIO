@@ -48,9 +48,10 @@ On **every operating system** the interface uses a consistent dark theme
   library (`work-obj*.cf`), object files (`*.o`), waveform dumps (`*.vcd`/`*.ghw`),
   coverage data (`*.gcda`/`*.gcno`) and the elaborated simulation executable land
   there. Relative TB paths such as `../input/ref_wave_data.txt` therefore resolve
-  next to `output/`. Via Simulation → **"Clean"** (also a toolbar button) you can
-  clear the output directory at any time — similar to a `clean` target in a GHDL
-  Makefile
+  next to `output/`. Via Simulation → **"Clean (ghdl --clean)"** (also a toolbar
+  button; Normal and OSVVM modes) you can run `ghdl --clean` on the work
+  directory. In Normal mode GHDL Studio also clears the Studio `output/` folder
+  afterwards (waveforms, executable, …)
 - Before **Run**, **stages** project data/stimulus files into
   `<output>/../input/<filename>` (copy if needed) so `../input/…` opens succeed
   even when the source file lives elsewhere in the tree; the log shows the cwd and

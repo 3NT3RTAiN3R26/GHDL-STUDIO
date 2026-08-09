@@ -5,6 +5,7 @@ from ghdl_studio.ghdl_commands import (
     DEFAULT_RUN_EXTRA_ARGS,
     RunOptions,
     build_analyze_args,
+    build_clean_args,
     build_elaborate_args,
     build_library_search_args,
     build_run_args,
@@ -21,6 +22,24 @@ from ghdl_studio.ghdl_commands import (
 def test_build_analyze_args_basic():
     args = build_analyze_args(["counter.vhd", "counter_tb.vhd"])
     assert args == ["-a", "--std=08", "counter.vhd", "counter_tb.vhd"]
+
+
+def test_build_clean_args_basic():
+    assert build_clean_args() == ["--clean", "--std=08"]
+
+
+def test_build_clean_args_with_workdir_and_libs():
+    args = build_clean_args(
+        std="08",
+        work_dir="/tmp/out",
+        library_paths=["/libs/osvvm", ""],
+    )
+    assert args == [
+        "--clean",
+        "--std=08",
+        "--workdir=/tmp/out",
+        "-P/libs/osvvm",
+    ]
 
 
 def test_build_analyze_args_with_workdir_and_extra():
