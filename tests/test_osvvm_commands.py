@@ -6,7 +6,9 @@ from ghdl_studio.osvvm_commands import (
     MODE_OSVVM,
     STUDIO_MODES,
     build_osvvm_batch_script,
+    build_osvvm_env_bootstrap,
     find_recent_waveform,
+    ghdl_bin_directory,
     is_pro_file,
     prepare_osvvm_run,
     resolve_osvvm_html_report,
@@ -42,6 +44,24 @@ def test_resolve_startup_tcl_scripts_dir(tmp_path):
     assert resolve_startup_tcl(str(tmp_path / "missing")) is None
 
 
+def test_ghdl_bin_directory():
+    assert ghdl_bin_directory(None) is None
+    assert ghdl_bin_directory("") is None
+    assert ghdl_bin_directory(r"C:\tools\ghdl\bin\ghdl.exe") == "C:/tools/ghdl/bin"
+    assert ghdl_bin_directory("C:/tools/ghdl/bin/ghdl.exe") == "C:/tools/ghdl/bin"
+    assert ghdl_bin_directory("/opt/ghdl/bin/ghdl").replace("\\", "/").endswith("/opt/ghdl/bin")
+
+
+def test_build_osvvm_env_bootstrap_windows_which_shim_and_path():
+    bootstrap = build_osvvm_env_bootstrap(r"C:\ghdl\bin\ghdl.exe")
+    assert 'tcl_platform(platform) eq "windows"' in bootstrap
+    assert "which.cmd" in bootstrap
+    assert "where %*" in bootstrap
+    assert "ghdl_studio_which_shim" in bootstrap
+    assert "C:/ghdl/bin" in bootstrap.replace("\\", "/")
+    assert 'set ::env(PATH)' in bootstrap
+
+
 def test_build_osvvm_batch_script_contains_source_and_build(tmp_path):
     startup = tmp_path / "StartUp.tcl"
     startup.write_text("#\n", encoding="utf-8")
@@ -52,6 +72,8 @@ def test_build_osvvm_batch_script_contains_source_and_build(tmp_path):
     assert "StartUp.tcl}" in script
     assert "build {" in script
     assert "demo.pro}" in script
+    # Windows which shim must run before StartUp.tcl (VendorScripts_GHDL).
+    assert script.index("which.cmd") < script.index("source {")
     # Wrapper must tolerate OSVVM report failures after a PASSED simulate.
     assert "catch {build" in script
     assert "AnalyzeErrorCount" in script
@@ -65,17 +87,23 @@ def test_prepare_osvvm_run_writes_batch_script(tmp_path):
     pro = tmp_path / "proj" / "run.pro"
     pro.parent.mkdir()
     pro.write_text("simulate tb\n", encoding="utf-8")
+    ghdl = tmp_path / "ghdl-bin" / "ghdl"
+    ghdl.parent.mkdir()
+    ghdl.write_text("#!/bin/sh\n", encoding="utf-8")
     plan = prepare_osvvm_run(
         tclsh="/usr/bin/tclsh",
         startup_tcl=str(startup),
         pro_file=str(pro),
         script_dir=str(tmp_path / "tmp"),
+        ghdl_executable=str(ghdl),
     )
     assert plan.tclsh == "/usr/bin/tclsh"
     assert plan.cwd == str(pro.parent.resolve())
     assert Path(plan.script_path).is_file()
     text = Path(plan.script_path).read_text(encoding="utf-8")
     assert "source" in text and "build" in text
+    assert "which.cmd" in text
+    assert "ghdl-bin" in text.replace("\\", "/")
 
 
 def test_resolve_osvvm_html_report_default_relative(tmp_path):

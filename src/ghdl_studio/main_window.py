@@ -385,6 +385,7 @@ class MainWindow(QMainWindow):
                 tclsh=tclsh,
                 startup_tcl=startup,
                 pro_file=self._pro_path,
+                ghdl_executable=self._settings.ghdl_executable,
             )
         except (OSError, ValueError) as exc:
             QMessageBox.warning(self, "OSVVM build", str(exc))
