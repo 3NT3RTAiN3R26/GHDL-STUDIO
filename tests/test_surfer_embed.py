@@ -11,6 +11,7 @@ QtWidgets = pytest.importorskip("PySide6.QtWidgets")
 from ghdl_studio.surfer_embed import (  # noqa: E402
     SurferEmbedder,
     _collect_descendant_pids,
+    _container_embed_size,
     _to_win32_long,
     ensure_linux_xcb_platform,
     find_surfer_executable,
@@ -181,6 +182,17 @@ def test_to_win32_long_maps_unsigned_styles_into_signed_32bit_range():
         normalized = _to_win32_long(raw)
         assert -0x80000000 <= normalized <= 0x7FFFFFFF
         assert ctypes.c_int32(normalized).value == normalized
+
+
+def test_container_embed_size_uses_parent_when_container_is_tiny(qapp):
+    """Windows/X11 embed must avoid 0x0 before the Waveforms stack page is shown."""
+    parent = QtWidgets.QWidget()
+    parent.resize(800, 600)
+    child = QtWidgets.QWidget(parent)
+    child.resize(0, 0)
+    width, height = _container_embed_size(child)
+    assert width >= 400
+    assert height >= 300
 
 
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="/proc ist Linux-spezifisch")

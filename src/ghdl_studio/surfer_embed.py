@@ -618,6 +618,35 @@ def _find_hwnd_for_pid_windows(pid: int):
     return found[0] if found else None
 
 
+def _win32_container_client_size(container: QWidget) -> tuple[int, int]:
+    """Return the container client area in physical pixels for ``MoveWindow``.
+
+    Qt ``QWidget.width()/height()`` are device-independent pixels. Surfer is a
+    separate DPI-aware process, so sizing from DIPs leaves unused space on
+    HiDPI Windows. Prefer ``GetClientRect`` on the native HWND.
+    """
+    fallback = _container_embed_size(container)
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        user32 = ctypes.windll.user32  # type: ignore[attr-defined]
+        _configure_user32_winapi(user32)
+        hwnd = int(container.winId())
+        if not hwnd:
+            return fallback
+        rect = wintypes.RECT()
+        if not user32.GetClientRect(hwnd, ctypes.byref(rect)):
+            return fallback
+        width = int(rect.right - rect.left)
+        height = int(rect.bottom - rect.top)
+        if width > 1 and height > 1:
+            return width, height
+    except Exception:  # noqa: BLE001 - fall back to Qt logical size
+        pass
+    return fallback
+
+
 class _Win32ChildResizeSync(QObject):
     """Haelt die Groesse eines per ``SetParent()`` eingebetteten
     Win32-Kindfensters synchron mit der Groesse des Qt-Containers.
@@ -643,8 +672,7 @@ class _Win32ChildResizeSync(QObject):
 
         user32 = ctypes.windll.user32  # type: ignore[attr-defined]
         _configure_user32_winapi(user32)
-        width = max(self._container.width(), 1)
-        height = max(self._container.height(), 1)
+        width, height = _win32_container_client_size(self._container)
         user32.MoveWindow(self._hwnd, 0, 0, width, height, True)
 
 
@@ -708,13 +736,20 @@ def _embed_foreign_window_windows(hwnd: int, container: QWidget) -> None:
     if not previous_parent:
         raise ctypes.WinError()  # type: ignore[attr-defined]
 
+    # Prefill Qt layout size in DIPs, then size Surfer from the native client rect
+    # (physical pixels) so HiDPI displays fill the Waveforms pane.
+    dip_w, dip_h = _container_embed_size(container)
+    container.resize(dip_w, dip_h)
+    QApplication.processEvents()
+    width, height = _win32_container_client_size(container)
+
     user32.SetWindowPos(
         hwnd,
         wintypes.HWND(0),
         0,
         0,
-        max(container.width(), 1),
-        max(container.height(), 1),
+        width,
+        height,
         swp_framechanged | swp_nozorder | swp_noactivate | swp_showwindow,
     )
 
@@ -722,6 +757,10 @@ def _embed_foreign_window_windows(hwnd: int, container: QWidget) -> None:
     container.installEventFilter(resizer)
     # Referenz halten, damit der Resizer nicht vorzeitig vom GC entfernt wird.
     container._ghdl_studio_resize_sync = resizer  # type: ignore[attr-defined]
+    resizer._resize_child()
+    # Spaetere Layout-Passes (Stack-Umschaltung / HiDPI) erneut synchronisieren.
+    for delay_ms in (50, 200, 500):
+        QTimer.singleShot(delay_ms, resizer._resize_child)
 
 
 class SurferEmbedder(QObject):
@@ -846,10 +885,16 @@ class SurferEmbedder(QObject):
         if sys.platform.startswith("win"):
             container = QWidget(self._parent_widget)
             container.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
+            container.setMinimumSize(QSize(200, 150))
+            container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
             parent = self._parent_widget
             if parent is not None and parent.layout() is not None:
                 parent.layout().addWidget(container)
+            # Prefill a usable size before SetParent (stack page may still be hidden).
+            width, height = _container_embed_size(container)
+            container.resize(width, height)
             container.show()
+            QApplication.processEvents()
             QTimer.singleShot(0, lambda: self._complete_os_embed(win_id, container, "windows"))
             return
 

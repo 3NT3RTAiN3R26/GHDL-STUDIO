@@ -221,6 +221,23 @@ def build_run_args(
     return args
 
 
+def build_clean_args(
+    std: str = DEFAULT_STD,
+    work_dir: str | None = None,
+    library_paths: list[str] | None = None,
+) -> list[str]:
+    """Build arguments for ``ghdl --clean``.
+
+    Removes object files / temporary artifacts for the work library while
+    keeping the library itself (unlike ``ghdl --remove``).
+    """
+    args = ["--clean", f"--std={std}"]
+    if work_dir:
+        args.append(f"--workdir={work_dir}")
+    args.extend(build_library_search_args(*(library_paths or [])))
+    return args
+
+
 @dataclass
 class RunOptions:
     """Buendelt alle Einstellungen fuer einen Analyze/Elaborate/Run-Durchlauf."""
