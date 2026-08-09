@@ -5,7 +5,11 @@ import pytest
 QtCore = pytest.importorskip("PySide6.QtCore")
 
 from ghdl_studio.ghdl_runner import GhdlRunner  # noqa: E402
-from ghdl_studio.widgets.log_console import is_osvvm_transcript_line  # noqa: E402
+from ghdl_studio.widgets.log_console import (  # noqa: E402
+    classify_log_line,
+    is_osvvm_transcript_line,
+    strip_process_error_prefix_for_osvvm,
+)
 
 
 @pytest.fixture
@@ -53,7 +57,28 @@ def test_osvvm_transcript_classifier():
     assert is_osvvm_transcript_line(
         "%%      0 ns    Log    ALWAYS    in Default,               Test-Start"
     )
+    assert is_osvvm_transcript_line(
+        "Error: %% 179.999982 ns    Log    PASSED    in VARIABLE_DELAY_COMP,   CHECK"
+    )
+    assert is_osvvm_transcript_line("DONE   PASSED")
+    assert classify_log_line(
+        "Error: %% 179.999982 ns    Log    PASSED    in VARIABLE_DELAY_COMP,   CHECK",
+        from_stderr=True,
+    ) == "info"
+    assert classify_log_line("DONE   PASSED", from_stderr=True) == "info"
+    assert (
+        strip_process_error_prefix_for_osvvm(
+            "Error: %% 179.999982 ns    Log    PASSED    in VARIABLE_DELAY_COMP,   CHECK"
+        ).startswith("%%")
+    )
     assert not is_osvvm_transcript_line(
         './variabledelaytb:error: cannot open file "OsvvmTemp_GHDL/OsvvmRun.yml"'
     )
     assert not is_osvvm_transcript_line("./variabledelaytb:error: simulation failed")
+    assert (
+        classify_log_line(
+            "libgcov profiling error: ...gcda:overwriting an existing profile data",
+            from_stderr=True,
+        )
+        == "error"
+    )

@@ -113,8 +113,9 @@ def test_mcode_coverage_guard_wraps_set_coverage():
     guard = build_osvvm_mcode_coverage_guard_tcl()
     assert "mcode" in guard
     assert "SetCoverageSimulateEnable" in guard
-    assert "wrapCoverageOff" in guard
-    assert "-o" in guard
+    assert "SetCoverageAnalyzeEnable" in guard
+    assert "GHDL_STUDIO_OSVVM_COVERAGE" in guard
+    assert "wrapCoverageOff" not in guard
 
 
 def test_osvvm_library_has_randompkg(tmp_path):
@@ -156,9 +157,9 @@ def test_build_osvvm_batch_script_contains_source_and_build(tmp_path):
     assert "demo.pro}" in script
     # Windows shim PATH setup must run before StartUp.tcl (VendorScripts_GHDL).
     assert script.index("_gsShimDir") < script.index("source {")
-    # mcode coverage guard runs after StartUp so it can wrap SetCoverage*.
-    assert script.index("source {") < script.index("wrapCoverageOff")
-    assert script.index("wrapCoverageOff") < script.index("catch {build")
+    # Coverage guard runs after StartUp so SetCoverage* APIs exist.
+    assert script.index("source {") < script.index("GHDL_STUDIO_OSVVM_COVERAGE")
+    assert script.index("GHDL_STUDIO_OSVVM_COVERAGE") < script.index("catch {build")
     # Wrapper must tolerate OSVVM report failures after a PASSED simulate.
     assert "catch {build" in script
     assert "AnalyzeErrorCount" in script
@@ -230,7 +231,32 @@ def test_find_compiled_ghdl_lib_dir(tmp_path):
     (ghdl_lib / "osvvm").mkdir(parents=True)
     assert find_compiled_ghdl_lib_dir(str(root)) == ghdl_lib.resolve()
     assert find_compiled_ghdl_lib_dir(str(ghdl_lib)) == ghdl_lib.resolve()
+    assert find_compiled_ghdl_lib_dir(str(root / "VHDL_LIBS")) == ghdl_lib.resolve()
     assert find_compiled_ghdl_lib_dir(str(tmp_path / "missing")) is None
+
+
+def test_find_compiled_ghdl_lib_dir_prefers_matching_version(tmp_path, monkeypatch):
+    root = tmp_path / "osvvm_ghdl"
+    older = root / "VHDL_LIBS" / "GHDL-4.1.0"
+    newer = root / "VHDL_LIBS" / "GHDL-6.0.0"
+    older.mkdir(parents=True)
+    newer.mkdir(parents=True)
+    # Make the older tree look "newer" by mtime so version match must win.
+    import os
+    import time
+
+    now = time.time()
+    os.utime(newer, (now - 100, now - 100))
+    os.utime(older, (now, now))
+
+    ghdl = tmp_path / "ghdl"
+    ghdl.write_text("#!/bin/sh\necho 'GHDL 6.0.0'\n", encoding="utf-8")
+    ghdl.chmod(0o755)
+
+    from ghdl_studio import osvvm_commands as oc
+
+    monkeypatch.setattr(oc, "get_ghdl_version", lambda _bin: "6.0.0")
+    assert find_compiled_ghdl_lib_dir(str(root), ghdl_bin=str(ghdl)) == newer.resolve()
 
 
 def test_build_osvvm_precompile_script(tmp_path):

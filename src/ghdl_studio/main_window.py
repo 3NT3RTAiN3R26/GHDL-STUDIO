@@ -63,7 +63,12 @@ from ghdl_studio.vhdl_scanner import (
 from ghdl_studio.widgets.code_editor import CodeEditor
 from ghdl_studio.widgets.file_explorer import FileExplorer
 from ghdl_studio.widgets.html_report_view import HtmlReportView
-from ghdl_studio.widgets.log_console import LogConsole, is_osvvm_transcript_line
+from ghdl_studio.widgets.log_console import (
+    LogConsole,
+    classify_log_line,
+    is_osvvm_transcript_line,
+    strip_process_error_prefix_for_osvvm,
+)
 from ghdl_studio.widgets.precompile_osvvm_dialog import PrecompileOsvvmDialog
 from ghdl_studio.widgets.run_settings_dialog import RunSettingsDialog
 from ghdl_studio.widgets.startup_mode_dialog import StartupModeDialog
@@ -481,7 +486,7 @@ class MainWindow(QMainWindow):
         self._pending_precompile_update_path = False
         if not update or not lib_dir:
             return
-        compiled = find_compiled_ghdl_lib_dir(lib_dir)
+        compiled = find_compiled_ghdl_lib_dir(lib_dir, ghdl_bin=self._ghdl_executable_or_warn())
         if compiled is None:
             self._log_console.append_output(
                 "OSVVM precompile finished, but VHDL_LIBS/GHDL-* was not found yet.\n"
@@ -884,25 +889,28 @@ class MainWindow(QMainWindow):
     def _append_process_text(self, text: str, *, from_stderr: bool) -> None:
         """Show GHDL/OSVVM process text in the Output dock.
 
-        OSVVM transcript lines (``%% ... Log ...``) often arrive on stderr but
-        are normal log output, not tool failures — keep them as plain output.
-        Real GHDL errors (``:error:``, ``simulation failed``) stay red.
+        Prefer OSVVM transcript classification over stderr so that AlertLog
+        ``%%`` / ``Log`` / ``DONE PASSED`` lines are not painted as errors
+        (including when a prior prefix already added a leading ``Error:``).
         """
         if not text:
             return
-        # Preserve chunking but classify per line when mixed.
         parts = text.splitlines(keepends=True)
         if not parts:
             self._log_console.append_output(text)
             return
         for part in parts:
-            line = part.rstrip("\r\n")
-            if is_osvvm_transcript_line(line):
-                self._log_console.append_output(part if part.endswith("\n") else part + "\n")
-            elif from_stderr and line.strip():
-                self._log_console.append_error(part if part.endswith("\n") else part + "\n")
+            line = strip_process_error_prefix_for_osvvm(part.rstrip("\r\n"))
+            kind = classify_log_line(line)
+            # Real GHDL/tool stderr is usually an error; OSVVM %% transcript on stderr is not.
+            if from_stderr and kind == "info" and not is_osvvm_transcript_line(line):
+                kind = "error"
+            if kind == "error":
+                self._log_console.append_error(line + ("\n" if part.endswith("\n") else ""))
+            elif kind == "warning":
+                self._log_console.append_warning(line + ("\n" if part.endswith("\n") else ""))
             elif line.strip() or part.endswith("\n"):
-                self._log_console.append_output(part if part.endswith("\n") else part + "\n")
+                self._log_console.append_output(line + ("\n" if part.endswith("\n") else ""))
 
     def _on_finished(self, exit_code: int, label: str) -> None:
         if exit_code == 0:
