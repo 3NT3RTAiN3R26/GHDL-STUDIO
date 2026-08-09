@@ -6,8 +6,8 @@ from ghdl_studio import __version__
 from ghdl_studio.app import build_arg_parser
 
 
-def test_package_version_is_0_5_1():
-    assert __version__ == "0.5.1"
+def test_package_version_is_0_5_2():
+    assert __version__ == "0.5.2"
 
 
 def test_version_flag_prints_and_exits(capsys):

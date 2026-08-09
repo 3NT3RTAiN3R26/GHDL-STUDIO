@@ -79,8 +79,9 @@ class RunSettingsDialog(QDialog):
         self._osvvm_lib_edit = QLineEdit(run_options.osvvm_lib_path or settings.osvvm_lib_path, self)
         self._osvvm_lib_edit.setPlaceholderText("Directory with precompiled OSVVM libraries")
         self._osvvm_lib_edit.setToolTip(
-            "Normal GHDL mode: path to precompiled OSVVM GHDL libraries. "
-            "Passed to Analyze/Elaborate/Run as -P<path>."
+            "Normal GHDL mode: path to precompiled OSVVM GHDL libraries "
+            "(usually …/VHDL_LIBS/GHDL-<version>). Passed to Analyze/Elaborate/Run "
+            "as -P<path>. Use Simulation → Precompile OSVVM library… to create it."
         )
         osvvm_browse_button = QPushButton("Browse...", self)
         osvvm_browse_button.clicked.connect(self._on_browse_osvvm_lib)

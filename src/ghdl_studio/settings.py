@@ -113,6 +113,15 @@ class AppSettings:
         self._set("osvvm_lib_path", value)
 
     @property
+    def osvvm_library_directory(self) -> str:
+        """Root passed to OSVVM ``SetLibraryDirectory`` when precompiling."""
+        return self._settings.value("osvvm_library_directory", "", str) or ""
+
+    @osvvm_library_directory.setter
+    def osvvm_library_directory(self, value: str) -> None:
+        self._set("osvvm_library_directory", value)
+
+    @property
     def custom_lib_path(self) -> str:
         return self._settings.value("custom_lib_path", "", str) or ""
 

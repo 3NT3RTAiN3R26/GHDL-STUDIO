@@ -37,6 +37,9 @@ On **every operating system** the interface uses a consistent dark theme
   - Combined flow "Analyze + Elaborate + Run" (individual Analyze / Elaborate / Run
     buttons do **not** chain into the next step)
   - **Build .pro (OSVVM)** in OSVVM mode (`tclsh` + OSVVM Scripts)
+  - **Precompile OSVVM library…** (both modes): `SetLibraryDirectory` +
+    `build …/osvvm` via TCL so Normal mode `-P` can resolve
+    `use osvvm.RandomPkg.all` (optional: auto-set **OSVVM lib path**)
   - After a successful OSVVM build, opens an **OSVVM Report** tab with the
     HTML summary (default `build/build_all/build_all.html` next to the `.pro`;
     configurable under **Settings → OSVVM HTML report** — absolute paths OK)
@@ -320,9 +323,11 @@ Files in `examples/adder/`:
 
 #### Normal GHDL mode (manual files + `-P`)
 
-1. Precompile OSVVM for GHDL (vendor script or OSVVM TCL) and set
-   **Settings → OSVVM lib path** to the directory that contains the compiled
-   OSVVM libraries (`-P` search path)
+1. Set **Settings → OSVVM Scripts path** (and TCL / GHDL), then use
+   **Simulation → Precompile OSVVM library…** to compile `osvvm` (RandomPkg,
+   Scoreboard, …) into a library directory. Tick **set OSVVM lib path (-P)**
+   so Analyze finds `use osvvm.RandomPkg.all`. You can also point
+   **OSVVM lib path** manually at an existing `VHDL_LIBS/GHDL-*` folder.
 2. Add `examples/adder/adder.vhd`, then `examples/adder/adder_tb.vhd`
 3. Select top-level entity `adder_tb` (stop time can stay empty — the TB calls
    `std.env.stop`)

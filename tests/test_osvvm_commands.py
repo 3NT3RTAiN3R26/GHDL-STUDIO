@@ -1,19 +1,28 @@
 from pathlib import Path
 
+import pytest
+
 from ghdl_studio.osvvm_commands import (
     DEFAULT_OSVVM_HTML_REPORT,
     MODE_NORMAL,
     MODE_OSVVM,
+    PRECOMPILE_ALL,
+    PRECOMPILE_OSVVM,
     STUDIO_MODES,
     build_osvvm_batch_script,
     build_osvvm_env_bootstrap,
+    build_osvvm_precompile_script,
+    find_compiled_ghdl_lib_dir,
     find_recent_waveform,
     ghdl_bin_directory,
     install_windows_osvvm_shims,
     is_pro_file,
+    prepare_osvvm_precompile_run,
     prepare_osvvm_run,
     resolve_ghdl_executable_path,
+    resolve_osvvm_home_directory,
     resolve_osvvm_html_report,
+    resolve_osvvm_precompile_target,
     resolve_startup_tcl,
     tcl_quote,
 )
@@ -151,6 +160,77 @@ def test_prepare_osvvm_run_writes_batch_script(tmp_path):
     ghdl_cmd = (shim / "ghdl.cmd").read_text(encoding="utf-8")
     assert "ghdl-bin" in ghdl_cmd.replace("\\", "/")
     assert ghdl_cmd.strip().startswith("@echo off")
+
+
+def _fake_osvvm_tree(tmp_path: Path) -> tuple[Path, Path]:
+    """Create a minimal OsvvmLibraries layout with Scripts/StartUp.tcl + osvvm/."""
+    home = tmp_path / "OsvvmLibraries"
+    scripts = home / "Scripts"
+    scripts.mkdir(parents=True)
+    startup = scripts / "StartUp.tcl"
+    startup.write_text("# fake startup\n", encoding="utf-8")
+    util = home / "osvvm"
+    util.mkdir()
+    (util / "osvvm.pro").write_text("library osvvm\n", encoding="utf-8")
+    (home / "OsvvmLibraries.pro").write_text("include ./osvvm\n", encoding="utf-8")
+    return home, startup
+
+
+def test_resolve_osvvm_home_and_precompile_target(tmp_path):
+    home, startup = _fake_osvvm_tree(tmp_path)
+    assert resolve_osvvm_home_directory(str(startup)) == home.resolve()
+    assert resolve_osvvm_home_directory(str(home / "Scripts")) == home.resolve()
+    assert resolve_osvvm_home_directory(str(home)) == home.resolve()
+    assert resolve_osvvm_precompile_target(home, PRECOMPILE_OSVVM) == (home / "osvvm").resolve()
+    assert resolve_osvvm_precompile_target(home, PRECOMPILE_ALL) == (
+        home / "OsvvmLibraries.pro"
+    ).resolve()
+    with pytest.raises(FileNotFoundError):
+        resolve_osvvm_precompile_target(tmp_path / "empty", PRECOMPILE_OSVVM)
+
+
+def test_find_compiled_ghdl_lib_dir(tmp_path):
+    root = tmp_path / "osvvm_ghdl"
+    ghdl_lib = root / "VHDL_LIBS" / "GHDL-6.0.0"
+    (ghdl_lib / "osvvm").mkdir(parents=True)
+    assert find_compiled_ghdl_lib_dir(str(root)) == ghdl_lib.resolve()
+    assert find_compiled_ghdl_lib_dir(str(ghdl_lib)) == ghdl_lib.resolve()
+    assert find_compiled_ghdl_lib_dir(str(tmp_path / "missing")) is None
+
+
+def test_build_osvvm_precompile_script(tmp_path):
+    home, startup = _fake_osvvm_tree(tmp_path)
+    lib_dir = tmp_path / "osvvm_ghdl"
+    lib_dir.mkdir()
+    script = build_osvvm_precompile_script(
+        str(startup),
+        library_directory=str(lib_dir),
+        target=PRECOMPILE_OSVVM,
+    )
+    assert "SetLibraryDirectory" in script
+    assert "build {" in script
+    assert "osvvm}" in script.replace("\\", "/")
+    assert script.index("SetLibraryDirectory") < script.index("build {")
+    assert "source {" in script
+
+
+def test_prepare_osvvm_precompile_run(tmp_path):
+    home, startup = _fake_osvvm_tree(tmp_path)
+    lib_dir = tmp_path / "libs"
+    plan = prepare_osvvm_precompile_run(
+        tclsh="/usr/bin/tclsh",
+        startup_tcl=str(startup),
+        library_directory=str(lib_dir),
+        target=PRECOMPILE_OSVVM,
+        script_dir=str(tmp_path / "tmp"),
+        ghdl_executable=str(tmp_path / "bin" / "ghdl"),
+    )
+    assert plan.cwd == str(lib_dir.resolve())
+    assert Path(plan.script_path).name == "ghdl_studio_osvvm_precompile.tcl"
+    text = Path(plan.script_path).read_text(encoding="utf-8")
+    assert "SetLibraryDirectory" in text
+    assert "precompile" in plan.command_display.lower()
+    assert home.name in text or "osvvm" in text
 
 
 def test_resolve_osvvm_html_report_default_relative(tmp_path):
