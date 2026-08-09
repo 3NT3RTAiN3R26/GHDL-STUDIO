@@ -70,10 +70,9 @@ class StartupModeDialog(QDialog):
         )
         self._remember_check.setChecked(bool(settings.remember_startup_mode))
 
-        # Prefer OSVVM if a .pro was used last time, or if remember says so.
-        if settings.startup_mode == MODE_OSVVM or (
-            settings.last_pro_file and is_pro_file(settings.last_pro_file)
-        ):
+        # Honour the last chosen mode. A leftover .pro path must not force
+        # OSVVM when the user last used (or now selects) Normal GHDL.
+        if settings.startup_mode == MODE_OSVVM:
             self._osvvm_radio.setChecked(True)
         else:
             self._normal_radio.setChecked(True)
@@ -112,6 +111,11 @@ class StartupModeDialog(QDialog):
             self._osvvm_radio.setChecked(True)
 
     def _on_pro_text_changed(self, text: str) -> None:
+        # Only auto-switch when the user is editing the .pro path (OSVVM
+        # selected / field enabled). Do not yank Normal → OSVVM merely
+        # because a previous path is still displayed in the disabled field.
+        if not self._pro_edit.isEnabled():
+            return
         if text.strip() and is_pro_file(text.strip()):
             self._select_osvvm_mode()
 
@@ -136,39 +140,40 @@ class StartupModeDialog(QDialog):
             self._pro_edit.setText(path)
 
     def _on_accept(self) -> None:
-        # If a .pro path is filled in, treat OK as OSVVM even if the user
-        # never clicked the radio (common when using Browse first).
-        pro = self._pro_edit.text().strip()
-        if pro and is_pro_file(pro):
-            self._select_osvvm_mode()
+        # Respect the radio selection. A leftover .pro path from a previous
+        # OSVVM session must not override an explicit Normal GHDL choice
+        # (issue #9).
+        if self._normal_radio.isChecked():
+            self.accept()
+            return
 
-        if self._osvvm_radio.isChecked():
-            if not pro:
-                QMessageBox.warning(
-                    self,
-                    "No .pro file",
-                    "Please select an OSVVM .pro file (Browse…), "
-                    "or choose Normal GHDL mode instead.",
-                )
-                self._pro_edit.setFocus()
-                return
-            expanded = Path(pro).expanduser()
-            if not expanded.is_file():
-                QMessageBox.warning(
-                    self,
-                    "File not found",
-                    f"The .pro file does not exist:\n{expanded}",
-                )
-                self._pro_edit.setFocus()
-                return
-            if not is_pro_file(str(expanded)):
-                QMessageBox.warning(
-                    self,
-                    "Not a .pro file",
-                    "Please choose a file with the .pro extension.",
-                )
-                self._pro_edit.setFocus()
-                return
+        pro = self._pro_edit.text().strip()
+        if not pro:
+            QMessageBox.warning(
+                self,
+                "No .pro file",
+                "Please select an OSVVM .pro file (Browse…), "
+                "or choose Normal GHDL mode instead.",
+            )
+            self._pro_edit.setFocus()
+            return
+        expanded = Path(pro).expanduser()
+        if not expanded.is_file():
+            QMessageBox.warning(
+                self,
+                "File not found",
+                f"The .pro file does not exist:\n{expanded}",
+            )
+            self._pro_edit.setFocus()
+            return
+        if not is_pro_file(str(expanded)):
+            QMessageBox.warning(
+                self,
+                "Not a .pro file",
+                "Please choose a file with the .pro extension.",
+            )
+            self._pro_edit.setFocus()
+            return
         self.accept()
 
     @property

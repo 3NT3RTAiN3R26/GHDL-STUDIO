@@ -40,15 +40,31 @@ def test_browse_selects_osvvm_mode(qapp, settings, tmp_path, monkeypatch):
     assert dialog.selected_pro_file == str(pro)
 
 
-def test_accept_with_pro_path_forces_osvvm(qapp, settings, tmp_path):
+def test_accept_normal_keeps_normal_even_with_pro_path(qapp, settings, tmp_path):
+    """Issue #9: leftover .pro path must not force OSVVM when Normal is selected."""
     pro = tmp_path / "demo.pro"
     pro.write_text("simulate tb\n", encoding="utf-8")
+    settings.last_pro_file = str(pro)
+    settings.startup_mode = MODE_OSVVM
     dialog = StartupModeDialog(settings)
+    assert dialog.selected_mode == MODE_OSVVM
+    assert dialog.selected_pro_file == str(pro)
+
     dialog._normal_radio.setChecked(True)
-    dialog._pro_edit.setText(str(pro))
     dialog._on_accept()
     assert dialog.result() == int(QDialog.DialogCode.Accepted)
-    assert dialog.selected_mode == MODE_OSVVM
+    assert dialog.selected_mode == MODE_NORMAL
+
+
+def test_initial_mode_follows_startup_mode_not_last_pro(qapp, settings, tmp_path):
+    pro = tmp_path / "demo.pro"
+    pro.write_text("simulate tb\n", encoding="utf-8")
+    settings.last_pro_file = str(pro)
+    settings.startup_mode = MODE_NORMAL
+    dialog = StartupModeDialog(settings)
+    assert dialog.selected_mode == MODE_NORMAL
+    # Path may still be shown for convenience when switching back to OSVVM.
+    assert dialog.selected_pro_file == str(pro)
 
 
 def test_accept_osvvm_without_pro_stays_open(qapp, settings, monkeypatch):
@@ -62,4 +78,13 @@ def test_accept_osvvm_without_pro_stays_open(qapp, settings, monkeypatch):
     )
     dialog._on_accept()
     assert dialog.result() != int(QDialog.DialogCode.Accepted)
+    assert dialog.selected_mode == MODE_OSVVM
+
+
+def test_editing_pro_path_switches_to_osvvm(qapp, settings, tmp_path):
+    pro = tmp_path / "run.pro"
+    pro.write_text("#\n", encoding="utf-8")
+    dialog = StartupModeDialog(settings)
+    dialog._osvvm_radio.setChecked(True)
+    dialog._pro_edit.setText(str(pro))
     assert dialog.selected_mode == MODE_OSVVM
