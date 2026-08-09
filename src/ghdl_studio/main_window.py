@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import os
+import time
 from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QComboBox,
+    QDialog,
     QDockWidget,
+    QFileDialog,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -36,6 +39,15 @@ from ghdl_studio.ghdl_commands import (
     stimulus_input_dir,
 )
 from ghdl_studio.ghdl_runner import GhdlRunner
+from ghdl_studio.osvvm_commands import (
+    MODE_NORMAL,
+    MODE_OSVVM,
+    find_recent_waveform,
+    find_tclsh_executable,
+    prepare_osvvm_run,
+    resolve_osvvm_html_report,
+    resolve_startup_tcl,
+)
 from ghdl_studio.surfer_embed import SurferEmbedder
 from ghdl_studio.settings import AppSettings
 from ghdl_studio.vcd_parser import parse_vcd
@@ -47,8 +59,10 @@ from ghdl_studio.vhdl_scanner import (
 )
 from ghdl_studio.widgets.code_editor import CodeEditor
 from ghdl_studio.widgets.file_explorer import FileExplorer
+from ghdl_studio.widgets.html_report_view import HtmlReportView
 from ghdl_studio.widgets.log_console import LogConsole, is_osvvm_transcript_line
 from ghdl_studio.widgets.run_settings_dialog import RunSettingsDialog
+from ghdl_studio.widgets.startup_mode_dialog import StartupModeDialog
 from ghdl_studio.widgets.waveform_viewer import WaveformViewer
 
 _WAVEFORM_PAGE_SURFER = 0
@@ -56,12 +70,18 @@ _WAVEFORM_PAGE_INTERNAL = 1
 
 
 class MainWindow(QMainWindow):
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        mode: str = MODE_NORMAL,
+        pro_path: str | None = None,
+    ) -> None:
         super().__init__()
-        self.setWindowTitle("GHDL Studio")
         self.resize(1100, 750)
 
         self._settings = AppSettings()
+        self._mode = mode if mode in (MODE_NORMAL, MODE_OSVVM) else MODE_NORMAL
+        self._pro_path = str(Path(pro_path).resolve()) if pro_path else ""
+        self._osvvm_run_started_at: float | None = None
         self._run_options = RunOptions(
             std=self._settings.vhdl_std,
             output_dir=self._settings.output_dir,
@@ -126,6 +146,9 @@ class MainWindow(QMainWindow):
         self._editor_tabs.setTabsClosable(True)
         self._editor_tabs.tabCloseRequested.connect(self._close_editor_tab)
 
+        self._html_report_view = HtmlReportView(self)
+        self._osvvm_report_tab_index = -1
+
         self._central_tabs = QTabWidget(self)
         self._central_tabs.addTab(self._editor_tabs, "Editor")
         self._central_tabs.addTab(self._waveform_tab, "Waveforms")
@@ -147,14 +170,21 @@ class MainWindow(QMainWindow):
         # actions must not auto-chain into the next GHDL step.
         self._pending_chain: list[str] = []
         self._current_vcd_path: str | None = None
+        self._apply_studio_mode()
 
     def _create_menu(self) -> None:
         menu_bar = self.menuBar()
 
         file_menu = menu_bar.addMenu("&File")
-        add_action = QAction("Add source file(s)...", self)
-        add_action.triggered.connect(self._file_explorer._on_add_files)
-        file_menu.addAction(add_action)
+        self._add_files_action = QAction("Add source file(s)...", self)
+        self._add_files_action.triggered.connect(self._file_explorer._on_add_files)
+        file_menu.addAction(self._add_files_action)
+        self._open_pro_action = QAction("Open .pro…", self)
+        self._open_pro_action.triggered.connect(self._on_open_pro)
+        file_menu.addAction(self._open_pro_action)
+        self._switch_mode_action = QAction("Switch mode…", self)
+        self._switch_mode_action.triggered.connect(self._on_switch_mode)
+        file_menu.addAction(self._switch_mode_action)
         save_action = QAction("Save", self)
         save_action.setShortcut("Ctrl+S")
         save_action.triggered.connect(self._save_current_editor)
@@ -176,6 +206,14 @@ class MainWindow(QMainWindow):
         self._run_action = QAction("Run (ghdl -r)", self)
         self._run_action.triggered.connect(self._run_simulation)
         run_menu.addAction(self._run_action)
+
+        self._build_pro_action = QAction("Build .pro (OSVVM)", self)
+        self._build_pro_action.triggered.connect(self._start_osvvm_build)
+        run_menu.addAction(self._build_pro_action)
+
+        self._open_html_report_action = QAction("Open OSVVM HTML report", self)
+        self._open_html_report_action.triggered.connect(self._open_osvvm_html_report)
+        run_menu.addAction(self._open_html_report_action)
 
         self._all_action = QAction("Analyze + Elaborate + Run", self)
         self._all_action.triggered.connect(self._run_full_flow)
@@ -210,11 +248,156 @@ class MainWindow(QMainWindow):
         toolbar.addAction(self._analyze_action)
         toolbar.addAction(self._elaborate_action)
         toolbar.addAction(self._run_action)
+        toolbar.addAction(self._build_pro_action)
         toolbar.addAction(self._all_action)
         toolbar.addSeparator()
         toolbar.addAction(self._stop_action)
         toolbar.addAction(self._clean_action)
         self.addToolBar(toolbar)
+
+    def _apply_studio_mode(self) -> None:
+        """Enable Normal vs OSVVM UI and update the window title."""
+        osvvm = self._mode == MODE_OSVVM
+        self._analyze_action.setVisible(not osvvm)
+        self._elaborate_action.setVisible(not osvvm)
+        self._run_action.setVisible(not osvvm)
+        self._all_action.setVisible(not osvvm)
+        self._build_pro_action.setVisible(osvvm)
+        self._open_html_report_action.setVisible(osvvm)
+        self._add_files_action.setEnabled(not osvvm)
+        # Always allow opening a .pro (switches into OSVVM mode).
+        self._open_pro_action.setEnabled(True)
+        self._file_explorer.setEnabled(not osvvm)
+        if hasattr(self, "_simulation_bar"):
+            self._simulation_bar.setVisible(not osvvm)
+        if not osvvm:
+            self._hide_osvvm_report_tab()
+
+        if osvvm:
+            name = Path(self._pro_path).name if self._pro_path else "(no .pro)"
+            self.setWindowTitle(f"GHDL Studio — OSVVM: {name}")
+            self._settings.startup_mode = MODE_OSVVM
+            if self._pro_path:
+                self._log_console.append_output(
+                    f"OSVVM mode: {self._pro_path}\n"
+                    "Use Simulation → Build .pro (OSVVM). "
+                    "Requires tclsh and Settings → OSVVM Scripts path "
+                    "(directory with StartUp.tcl)."
+                )
+                self._settings.last_pro_file = self._pro_path
+                self._settings.last_project_dir = str(Path(self._pro_path).parent)
+            else:
+                self._log_console.append_output(
+                    "OSVVM mode active, but no .pro file is selected. "
+                    "Use File → Open .pro…"
+                )
+        else:
+            self.setWindowTitle("GHDL Studio — Normal GHDL")
+            self._settings.startup_mode = MODE_NORMAL
+
+    def _on_switch_mode(self) -> None:
+        dialog = StartupModeDialog(self._settings, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        dialog.apply_to_settings()
+        self._mode = dialog.selected_mode
+        self._pro_path = (
+            str(Path(dialog.selected_pro_file).expanduser().resolve())
+            if dialog.selected_mode == MODE_OSVVM
+            else ""
+        )
+        self._apply_studio_mode()
+
+    def _on_open_pro(self) -> None:
+        start_dir = str(Path(self._pro_path).parent) if self._pro_path else (
+            self._settings.last_project_dir or ""
+        )
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select OSVVM .pro file",
+            start_dir,
+            "OSVVM project (*.pro);;All files (*)",
+        )
+        if not path:
+            return
+        self._mode = MODE_OSVVM
+        self._pro_path = str(Path(path).resolve())
+        self._apply_studio_mode()
+
+    def _tcl_executable_or_warn(self) -> str | None:
+        executable = self._settings.tcl_executable or find_tclsh_executable() or ""
+        if not executable:
+            QMessageBox.warning(
+                self,
+                "tclsh not found",
+                "No TCL shell (tclsh) is configured.\n\n"
+                "Install TCL (e.g. sudo apt install tcl) and/or set the path "
+                "under Settings → TCL executable.\n\n"
+                "OSVVM Scripts also require an OSVVM checkout — see:\n"
+                "https://github.com/OSVVM/OSVVM-Scripts",
+            )
+            return None
+        return executable
+
+    def _startup_tcl_or_warn(self) -> str | None:
+        startup = resolve_startup_tcl(self._settings.osvvm_scripts_path)
+        if startup is not None:
+            return str(startup)
+        QMessageBox.warning(
+            self,
+            "OSVVM Scripts not found",
+            "Could not find StartUp.tcl.\n\n"
+            "Set Settings → OSVVM Scripts path to either:\n"
+            "• …/OsvvmLibraries/Scripts  (contains StartUp.tcl), or\n"
+            "• …/OsvvmLibraries  (parent that contains Scripts/StartUp.tcl)\n\n"
+            "See https://github.com/OSVVM/OSVVM-Scripts",
+        )
+        return None
+
+    def _start_osvvm_build(self) -> None:
+        """Run ``source StartUp.tcl`` + ``build <pro>`` via tclsh."""
+        self._pending_chain = []
+        if self._mode != MODE_OSVVM:
+            return
+        if not self._pro_path or not Path(self._pro_path).is_file():
+            QMessageBox.warning(
+                self,
+                "No .pro file",
+                "Please open an OSVVM .pro file (File → Open .pro…).",
+            )
+            return
+        tclsh = self._tcl_executable_or_warn()
+        if not tclsh:
+            return
+        startup = self._startup_tcl_or_warn()
+        if not startup:
+            return
+        if self._runner.is_running:
+            QMessageBox.warning(
+                self,
+                "Busy",
+                "A process is already running. Stop it before starting another.",
+            )
+            return
+
+        try:
+            plan = prepare_osvvm_run(
+                tclsh=tclsh,
+                startup_tcl=startup,
+                pro_file=self._pro_path,
+            )
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "OSVVM build", str(exc))
+            return
+
+        # Prefer mtime floor from "now" so we pick waves written by this run.
+        self._osvvm_run_started_at = time.time() - 1.0
+        self._log_console.append_output(
+            f"OSVVM Scripts: {startup}\n"
+            f"Working directory: {plan.cwd}\n"
+            f"Batch script: {plan.script_path}"
+        )
+        self._runner.run(plan.tclsh, [plan.script_path], cwd=plan.cwd, label="OSVVM Build")
 
     def _create_simulation_bar(self) -> None:
         """Erstellt eine zweite, auf der Hauptseite sichtbare Werkzeugleiste
@@ -244,14 +427,14 @@ class MainWindow(QMainWindow):
         )
         self._stop_time_edit.textChanged.connect(self._on_stop_time_changed)
 
-        sim_bar = QToolBar("Simulation settings", self)
-        sim_bar.setObjectName("simulation_bar")
-        sim_bar.addWidget(QLabel(" Top-level entity: ", self))
-        sim_bar.addWidget(self._top_unit_combo)
-        sim_bar.addWidget(QLabel("  Stop time: ", self))
-        sim_bar.addWidget(self._stop_time_edit)
+        self._simulation_bar = QToolBar("Simulation settings", self)
+        self._simulation_bar.setObjectName("simulation_bar")
+        self._simulation_bar.addWidget(QLabel(" Top-level entity: ", self))
+        self._simulation_bar.addWidget(self._top_unit_combo)
+        self._simulation_bar.addWidget(QLabel("  Stop time: ", self))
+        self._simulation_bar.addWidget(self._stop_time_edit)
         self.addToolBarBreak()
-        self.addToolBar(sim_bar)
+        self.addToolBar(self._simulation_bar)
 
         self._refresh_top_unit_candidates()
 
@@ -290,11 +473,17 @@ class MainWindow(QMainWindow):
                 self._start_surfer_for(self._current_vcd_path)
 
     def _show_about(self) -> None:
+        from ghdl_studio import __version__
+
         QMessageBox.about(
             self,
             "About GHDL Studio",
-            "GHDL Studio\n\nA cross-platform interface for the "
-            "VHDL simulator GHDL, built with Python and PySide6.",
+            f"GHDL Studio\n"
+            f"Version {__version__}\n\n"
+            "A cross-platform interface for the VHDL simulator GHDL, "
+            "built with Python and PySide6.\n\n"
+            "Modes: Normal GHDL (manual files) and OSVVM (.pro via TCL).\n\n"
+            "CLI: ghdl-studio --version",
         )
 
     def _open_file_in_editor(self, path: str) -> None:
@@ -622,6 +811,9 @@ class MainWindow(QMainWindow):
             if label == "Run" and self._pending_after_run:
                 self._try_load_waveform(self._pending_after_run)
                 self._pending_after_run = None
+            elif label == "OSVVM Build":
+                self._try_load_osvvm_waveform()
+                self._open_osvvm_html_report()
             if self._pending_chain:
                 next_step = self._pending_chain.pop(0)
                 if next_step == "Elaborate":
@@ -635,29 +827,98 @@ class MainWindow(QMainWindow):
             self._pending_after_run = None
             self._log_console.append_error(f"[{label}] finished with error code {exit_code}.")
 
+    def _try_load_osvvm_waveform(self) -> None:
+        """After an OSVVM build, open the newest .ghw/.vcd near the .pro file."""
+        if not self._pro_path:
+            return
+        search_root = str(Path(self._pro_path).parent)
+        wave = find_recent_waveform(
+            search_root,
+            newer_than_mtime=self._osvvm_run_started_at,
+        )
+        if wave is None:
+            self._log_console.append_output(
+                "OSVVM build finished; no new .ghw/.vcd found next to the .pro "
+                "file. Open a waveform manually if the script wrote one elsewhere."
+            )
+            return
+        self._log_console.append_output(f"Opening waveform from OSVVM run: {wave}")
+        self._try_load_waveform(wave)
+
+    def _osvvm_html_report_path(self) -> Path | None:
+        if not self._pro_path:
+            return None
+        return resolve_osvvm_html_report(
+            self._pro_path,
+            self._settings.osvvm_html_report,
+        )
+
+    def _ensure_osvvm_report_tab(self) -> None:
+        index = self._central_tabs.indexOf(self._html_report_view)
+        if index < 0:
+            index = self._central_tabs.addTab(self._html_report_view, "OSVVM Report")
+        self._osvvm_report_tab_index = index
+
+    def _hide_osvvm_report_tab(self) -> None:
+        index = self._central_tabs.indexOf(self._html_report_view)
+        if index >= 0:
+            self._central_tabs.removeTab(index)
+        self._osvvm_report_tab_index = -1
+
+    def _open_osvvm_html_report(self) -> None:
+        """Load the configured OSVVM HTML report into a central tab."""
+        if self._mode != MODE_OSVVM:
+            return
+        report = self._osvvm_html_report_path()
+        if report is None:
+            QMessageBox.warning(
+                self,
+                "No .pro file",
+                "Open an OSVVM .pro file first (File → Open .pro…).",
+            )
+            return
+        self._ensure_osvvm_report_tab()
+        if self._html_report_view.load_file(str(report)):
+            self._log_console.append_output(f"OSVVM HTML report: {report}")
+            self._central_tabs.setCurrentWidget(self._html_report_view)
+        else:
+            self._log_console.append_output(
+                f"OSVVM HTML report not found at '{report}'. "
+                "Set Settings → OSVVM HTML report "
+                "(e.g. build/build_all/build_all.html or an absolute path) "
+                "to match your .pro output, then use Simulation → "
+                "Open OSVVM HTML report."
+            )
+
     def _on_failed_to_start(self, error: str) -> None:
         self._pending_chain = []
         self._pending_after_run = None
-        self._log_console.append_error(f"GHDL could not be started: {error}")
+        self._log_console.append_error(f"Process could not be started: {error}")
 
-    def _try_load_waveform(self, vcd_path: str) -> None:
-        if not Path(vcd_path).exists():
-            return
-        try:
-            data = parse_vcd(vcd_path)
-        except Exception as exc:  # noqa: BLE001
-            self._log_console.append_error(f"Could not read VCD file: {exc}")
+    def _try_load_waveform(self, wave_path: str) -> None:
+        if not Path(wave_path).exists():
             return
 
-        # Der interne Viewer wird immer sofort befuellt, damit unabhaengig
-        # vom Ergebnis der Surfer-Einbettung stets eine funktionierende
-        # Anzeige vorhanden ist (Fallback-Garantie).
-        self._waveform_viewer.set_data(data)
-        self._waveform_stack.setCurrentIndex(_WAVEFORM_PAGE_INTERNAL)
+        self._current_vcd_path = wave_path
         self._central_tabs.setCurrentWidget(self._waveform_tab)
 
-        self._current_vcd_path = vcd_path
-        self._start_surfer_for(vcd_path)
+        # Internal viewer supports VCD only; Surfer also opens GHW (OSVVM).
+        if Path(wave_path).suffix.lower() == ".vcd":
+            try:
+                data = parse_vcd(wave_path)
+            except Exception as exc:  # noqa: BLE001
+                self._log_console.append_error(f"Could not read VCD file: {exc}")
+                self._start_surfer_for(wave_path)
+                return
+            self._waveform_viewer.set_data(data)
+            self._waveform_stack.setCurrentIndex(_WAVEFORM_PAGE_INTERNAL)
+        else:
+            self._log_console.append_output(
+                f"Waveform is {Path(wave_path).suffix}; internal viewer "
+                "supports VCD only — opening in Surfer if available."
+            )
+
+        self._start_surfer_for(wave_path)
 
     def _start_surfer_for(self, vcd_path: str) -> None:
         self._surfer_embedder.stop()

@@ -9,6 +9,14 @@ On **every operating system** the interface uses a consistent dark theme
 
 ## Features (current status)
 
+- **Startup mode selection** — when GHDL Studio opens, choose:
+  - **Normal GHDL** — add source/data files manually, then Analyze / Elaborate / Run
+    (same workflow as 0.3.x)
+  - **OSVVM** — select a ``.pro`` script and run it with TCL
+    (`source StartUp.tcl` + `build …pro`). Requires `tclsh` and an
+    [OSVVM Scripts](https://github.com/OSVVM/OSVVM-Scripts) / OsvvmLibraries
+    checkout. Paths are configured under Settings (**TCL executable**,
+    **OSVVM Scripts path**). Use File → **Switch mode…** / **Open .pro…** later.
 - Manage project files (add/remove, **Move up** / **Move down** for compile
   order): **VHDL** (`.vhd`/`.vhdl`), **Verilog/SystemVerilog** (`.v`/`.sv`), and
   **data/stimulus** files (`.txt`, `.csv`, `.dat`, `.hex`, …). Verilog and data
@@ -27,7 +35,11 @@ On **every operating system** the interface uses a consistent dark theme
   - **Elaborate** (`ghdl -e`)
   - **Run** (`ghdl -r`), including VCD and GHW export (`--vcd=` / `--wave=`), stop time and generics
   - Combined flow "Analyze + Elaborate + Run" (individual Analyze / Elaborate / Run
-  buttons do **not** chain into the next step)
+    buttons do **not** chain into the next step)
+  - **Build .pro (OSVVM)** in OSVVM mode (`tclsh` + OSVVM Scripts)
+  - After a successful OSVVM build, opens an **OSVVM Report** tab with the
+    HTML summary (default `build/build_all/build_all.html` next to the `.pro`;
+    configurable under **Settings → OSVVM HTML report** — absolute paths OK)
 - **Dedicated output directory** (default `output/`, configurable in Settings):
   passed to GHDL as `--workdir`, and used as the process **cwd**, so the work
   library (`work-obj*.cf`), object files (`*.o`), waveform dumps (`*.vcd`/`*.ghw`),
@@ -56,7 +68,8 @@ On **every operating system** the interface uses a consistent dark theme
   (as hex), a time ruler, and Zoom In / Zoom Fit / Zoom Out
 - Settings dialog for the GHDL path and Surfer path (automatic detection via `PATH`
   or manual selection; Surfer integration can be enabled/disabled), the VHDL standard (87/93/00/02/08),
-  and optional **OSVVM lib path** / **Custom lib path** directories (passed to Analyze/Elaborate/Run as `-P`)
+  optional **OSVVM lib path** / **Custom lib path** directories (Normal mode `-P`),
+  plus **TCL executable** and **OSVVM Scripts path** for OSVVM `.pro` mode
 - Configurable extra flags for GHDL builds with the GCC backend, pre-filled by default
   and adjustable in the settings dialog or reset with "Default":
   - `ghdl -a`: `-Wc,-fprofile-arcs -Wc,-ftest-coverage -fsynopsys -fPIE`
@@ -68,9 +81,10 @@ On **every operating system** the interface uses a consistent dark theme
 
 ```
 src/ghdl_studio/
-├── app.py                 # Entry point (QApplication + MainWindow)
-├── main_window.py          # Main window, wires all widgets together
+├── app.py                 # Entry point (mode dialog + MainWindow)
+├── main_window.py          # Main window, Normal + OSVVM modes
 ├── ghdl_commands.py         # Pure helpers to build GHDL CLI arguments (Qt-free, testable)
+├── osvvm_commands.py        # OSVVM .pro / tclsh helpers (Qt-free, testable)
 ├── ghdl_runner.py            # Asynchronous process execution via QProcess
 ├── vcd_parser.py             # Minimal VCD parser + time formatting (Qt-free, testable)
 ├── vhdl_scanner.py            # Detection of VHDL entities / Verilog modules (Qt-free, testable)
@@ -83,12 +97,31 @@ src/ghdl_studio/
     ├── code_editor.py           # Text editor for VHDL files
     ├── vhdl_highlighter.py       # VHDL syntax highlighting
     ├── waveform_viewer.py         # Fallback waveform view from VCD data, including time ruler
-    └── run_settings_dialog.py     # Settings dialog (GHDL/Surfer path, standard, flags)
+    ├── startup_mode_dialog.py     # Normal vs OSVVM mode at startup
+    └── run_settings_dialog.py     # Settings dialog (GHDL/Surfer/TCL/OSVVM paths)
 
 examples/counter/            # Example: simple counter + basic testbench
 examples/adder/              # Example: combinational adder + OSVVM testbench
 tests/                        # Unit tests for the Qt-independent modules
 ```
+
+### OSVVM mode (``.pro`` files)
+
+1. Install TCL: `sudo apt install tcl` (provides `tclsh`)
+2. Clone / install [OSVVM](https://github.com/OSVVM) libraries so that
+   `…/OsvvmLibraries/Scripts/StartUp.tcl` exists
+   ([OSVVM-Scripts](https://github.com/OSVVM/OSVVM-Scripts))
+3. In GHDL Studio **Settings**, set:
+   - **TCL executable** → `tclsh` (or Detect automatically)
+   - **OSVVM Scripts path** → `…/OsvvmLibraries/Scripts` or `…/OsvvmLibraries`
+4. At startup choose **OSVVM mode** and select your ``.pro`` file
+5. **Simulation → Build .pro (OSVVM)** runs
+   `source StartUp.tcl` then `build <your.pro>`
+6. If the script writes a ``.ghw``/``.vcd`` next to the ``.pro``, GHDL Studio
+   tries to open it in Surfer / the Waveforms tab
+
+Normal mode still supports OSVVM VHDL testbenches via **OSVVM lib path** (`-P`)
+and Analyze → Elaborate → Run (see the adder example below).
 
 ## Requirements
 
@@ -246,6 +279,15 @@ or, after install:
 ghdl-studio
 ```
 
+Show the installed version (no GUI):
+
+```bash
+ghdl-studio --version
+# or: ghdl-studio -V
+```
+
+The same version string appears under **Help → About GHDL Studio**.
+
 ## Try the example projects
 
 ### Counter (built-in testbench)
@@ -263,6 +305,16 @@ ghdl-studio
 
 ### Adder (OSVVM testbench)
 
+Files in `examples/adder/`:
+
+| File | Role |
+|------|------|
+| `adder.vhd` | DUT |
+| `adder_tb.vhd` | OSVVM AffirmIfEqual testbench |
+| `adder.pro` | OSVVM Scripts build (for **OSVVM mode**) |
+
+#### Normal GHDL mode (manual files + `-P`)
+
 1. Precompile OSVVM for GHDL (vendor script or OSVVM TCL) and set
    **Settings → OSVVM lib path** to the directory that contains the compiled
    OSVVM libraries (`-P` search path)
@@ -274,9 +326,32 @@ ghdl-studio
    GHDL Studio also creates `OsvvmTemp_GHDL/OsvvmRun.yml` in the project
    directory before Run if it is missing
 
-Successful run of `adder_tb` (13 OSVVM affirmations passed), with waveforms and Output log:
+#### OSVVM mode (`.pro` / TCL)
 
-![GHDL Studio running the adder OSVVM testbench — all checks PASSED](docs/images/adder_osvvm_run.png)
+1. Install `tclsh` and clone [OsvvmLibraries](https://github.com/OSVVM/OsvvmLibraries)
+   **with submodules** (needs the `osvvm` utility library):
+   ```bash
+   git clone --recursive https://github.com/OSVVM/OsvvmLibraries
+   # or, if already cloned:  cd OsvvmLibraries && git submodule update --init osvvm
+   ```
+2. Settings → **TCL executable** + **OSVVM Scripts path**
+   (`…/OsvvmLibraries/Scripts` or `…/OsvvmLibraries`)
+3. At startup choose **OSVVM mode** and select `examples/adder/adder.pro`
+4. **Simulation → Build .pro (OSVVM)** — the `.pro` first `include`s
+   `OsvvmLibraries/osvvm`, then analyzes/simulates `adder_tb`
+   (`SetSaveWaves` writes a `.ghw` when possible). The first build compiles
+   OSVVM and takes longer; later runs reuse `VHDL_LIBS/`.
+5. After a successful build, the **OSVVM Report** tab loads the HTML report
+   from **Settings → OSVVM HTML report** (default
+   `build/build_all/build_all.html` relative to the `.pro` directory; absolute
+   paths are supported). Use **Simulation → Open OSVVM HTML report** to reopen
+   it. Example absolute path:
+   `…/test/vhdl/build/build_all/build_all.html`.
+
+Successful **OSVVM mode** run of `examples/adder/adder.pro`
+(**Build .pro (OSVVM)** — 13 affirmations passed, exit code 0):
+
+![GHDL Studio OSVVM mode: adder.pro build PASSED](docs/images/adder_osvvm_run.png)
 
 ## Development & tests
 
