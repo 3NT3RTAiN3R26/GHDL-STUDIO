@@ -279,6 +279,15 @@ or, after install:
 ghdl-studio
 ```
 
+Show the installed version (no GUI):
+
+```bash
+ghdl-studio --version
+# or: ghdl-studio -V
+```
+
+The same version string appears under **Help → About GHDL Studio**.
+
 ## Try the example projects
 
 ### Counter (built-in testbench)

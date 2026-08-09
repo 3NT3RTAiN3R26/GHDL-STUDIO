@@ -2,18 +2,36 @@
 
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 
+from ghdl_studio import __version__
 from ghdl_studio.main_window import MainWindow
 from ghdl_studio.osvvm_commands import MODE_NORMAL, MODE_OSVVM
 from ghdl_studio.settings import AppSettings
 from ghdl_studio.surfer_embed import ensure_linux_xcb_platform
 from ghdl_studio.theme import apply_dark_theme
 from ghdl_studio.widgets.startup_mode_dialog import StartupModeDialog
+
+
+def build_arg_parser() -> argparse.ArgumentParser:
+    """CLI for ``ghdl-studio`` (``--version`` before the GUI starts)."""
+    parser = argparse.ArgumentParser(
+        prog="ghdl-studio",
+        description="Cross-platform graphical interface for GHDL (VHDL simulator).",
+    )
+    parser.add_argument(
+        "-V",
+        "--version",
+        action="version",
+        version=f"ghdl-studio {__version__}",
+        help="Show program version and exit",
+    )
+    return parser
 
 
 def _resolve_session(settings: AppSettings) -> tuple[str, str] | None:
@@ -39,7 +57,16 @@ def _resolve_session(settings: AppSettings) -> tuple[str, str] | None:
     return MODE_NORMAL, ""
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    """Entry point for the ``ghdl-studio`` console script."""
+    cli_argv = list(sys.argv[1:] if argv is None else argv)
+    parser = build_arg_parser()
+    # ``--version`` / ``-V`` exit here via ArgumentParser action.
+    _, remaining = parser.parse_known_args(cli_argv)
+    if argv is None:
+        # Do not forward consumed flags to Qt.
+        sys.argv = [sys.argv[0], *remaining]
+
     # Vor QApplication: unter Linux/WSL XCB bevorzugen (wenn libxcb-cursor
     # vorhanden), damit Surfer per X11-Reparenting eingebettet werden kann.
     ensure_linux_xcb_platform()
@@ -62,6 +89,7 @@ def main() -> int:
             )
         return 1
     app.setApplicationName("GHDL Studio")
+    app.setApplicationVersion(__version__)
     apply_dark_theme(app)
 
     settings = AppSettings()

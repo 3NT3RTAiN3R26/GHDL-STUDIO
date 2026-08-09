@@ -478,10 +478,12 @@ class MainWindow(QMainWindow):
         QMessageBox.about(
             self,
             "About GHDL Studio",
-            f"GHDL Studio {__version__}\n\n"
+            f"GHDL Studio\n"
+            f"Version {__version__}\n\n"
             "A cross-platform interface for the VHDL simulator GHDL, "
             "built with Python and PySide6.\n\n"
-            "Modes: Normal GHDL (manual files) and OSVVM (.pro via TCL).",
+            "Modes: Normal GHDL (manual files) and OSVVM (.pro via TCL).\n\n"
+            "CLI: ghdl-studio --version",
         )
 
     def _open_file_in_editor(self, path: str) -> None:
