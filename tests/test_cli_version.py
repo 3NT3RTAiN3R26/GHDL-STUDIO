@@ -1,13 +1,23 @@
 """CLI ``--version`` / ``-V`` for ghdl-studio."""
 
+from pathlib import Path
+
 import pytest
 
 from ghdl_studio import __version__
 from ghdl_studio.app import build_arg_parser
 
 
-def test_package_version_is_0_5_3():
-    assert __version__ == "0.5.3"
+def test_package_version_matches_pyproject():
+    """Keep ``__version__`` and ``pyproject.toml`` in lockstep."""
+    text = Path(__file__).resolve().parents[1].joinpath("pyproject.toml").read_text(
+        encoding="utf-8"
+    )
+    match = next(
+        (line.split("=", 1)[1].strip().strip('"') for line in text.splitlines() if line.startswith("version =")),
+        None,
+    )
+    assert match == __version__ == "0.5.4"
 
 
 def test_version_flag_prints_and_exits(capsys):
