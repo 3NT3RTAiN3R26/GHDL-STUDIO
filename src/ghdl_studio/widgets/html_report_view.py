@@ -86,9 +86,8 @@ class HtmlReportView(QWidget):
         if self._engine == "webengine":
             self._view.setUrl(url)
         else:
-            # QTextBrowser: limited CSS; still useful without QtWebEngine.
-            # Use setSource for local files (resolves relative links/CSS).
-            # Note: setHtml() takes only the HTML string — no base-URL arg.
+            # QTextBrowser (PySide6): setHtml() accepts only the HTML string —
+            # never a base URL. Prefer setSource() so relative CSS/links work.
             self._view.setSearchPaths([str(file_path.parent)])
             self._view.setSource(url)
         return True

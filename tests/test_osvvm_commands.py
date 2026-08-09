@@ -84,7 +84,7 @@ def test_resolve_osvvm_html_report_default_relative(tmp_path):
     pro.write_text("#\n", encoding="utf-8")
     resolved = resolve_osvvm_html_report(str(pro))
     assert resolved == (pro.parent / DEFAULT_OSVVM_HTML_REPORT).resolve()
-    assert DEFAULT_OSVVM_HTML_REPORT == "build_all/build_all.html"
+    assert DEFAULT_OSVVM_HTML_REPORT == "build/build_all/build_all.html"
 
 
 def test_resolve_osvvm_html_report_custom_and_absolute(tmp_path):
@@ -95,6 +95,17 @@ def test_resolve_osvvm_html_report_custom_and_absolute(tmp_path):
     absolute = tmp_path / "elsewhere" / "out.html"
     resolved_abs = resolve_osvvm_html_report(str(pro), str(absolute))
     assert resolved_abs == absolute.resolve()
+
+
+def test_resolve_osvvm_html_report_fallback_build_all(tmp_path):
+    """If default build/… is missing, fall back to build_all/build_all.html."""
+    pro = tmp_path / "run.pro"
+    pro.write_text("#\n", encoding="utf-8")
+    legacy = tmp_path / "build_all" / "build_all.html"
+    legacy.parent.mkdir()
+    legacy.write_text("<html></html>", encoding="utf-8")
+    resolved = resolve_osvvm_html_report(str(pro), "")
+    assert resolved == legacy.resolve()
 
 
 def test_find_recent_waveform_prefers_newest(tmp_path):

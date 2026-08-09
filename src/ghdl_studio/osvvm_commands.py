@@ -26,7 +26,14 @@ STARTUP_TCL_NAME = "StartUp.tcl"
 
 # Default HTML report path relative to the directory that contains the .pro
 # file (common OSVVM project layout). Override in Settings.
-DEFAULT_OSVVM_HTML_REPORT = "build_all/build_all.html"
+DEFAULT_OSVVM_HTML_REPORT = "build/build_all/build_all.html"
+
+# Tried (in order) when the configured path is missing and still the default.
+OSVVM_HTML_REPORT_FALLBACKS = (
+    "build/build_all/build_all.html",
+    "build_all/build_all.html",
+    "index.html",
+)
 
 
 def find_tclsh_executable() -> str | None:
@@ -79,13 +86,29 @@ def resolve_osvvm_html_report(
     Relative ``report_path`` values are resolved against the directory that
     contains ``pro_file``. Absolute paths are returned as-is. Empty
     ``report_path`` uses :data:`DEFAULT_OSVVM_HTML_REPORT`.
+
+    When the configured path does not exist and is still the default, common
+    alternate layouts (``build_all/…``, ``index.html``) next to the ``.pro``
+    are tried.
     """
     configured = (report_path or "").strip() or DEFAULT_OSVVM_HTML_REPORT
     candidate = Path(configured).expanduser()
     if candidate.is_absolute():
-        return candidate
+        return candidate.resolve()
+
     base = Path(pro_file).expanduser().resolve().parent
-    return (base / candidate).resolve()
+    primary = (base / candidate).resolve()
+    if primary.is_file():
+        return primary
+
+    # Only search fallbacks when the user left the default / empty setting.
+    using_default = not (report_path or "").strip() or configured in OSVVM_HTML_REPORT_FALLBACKS
+    if using_default:
+        for relative in OSVVM_HTML_REPORT_FALLBACKS:
+            alt = (base / relative).resolve()
+            if alt.is_file():
+                return alt
+    return primary
 
 
 def build_osvvm_batch_script(startup_tcl: str, pro_file: str) -> str:

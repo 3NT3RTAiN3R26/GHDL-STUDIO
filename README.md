@@ -38,8 +38,8 @@ On **every operating system** the interface uses a consistent dark theme
     buttons do **not** chain into the next step)
   - **Build .pro (OSVVM)** in OSVVM mode (`tclsh` + OSVVM Scripts)
   - After a successful OSVVM build, opens an **OSVVM Report** tab with the
-    HTML summary (default `build_all/build_all.html` next to the `.pro`;
-    configurable under **Settings → OSVVM HTML report**)
+    HTML summary (default `build/build_all/build_all.html` next to the `.pro`;
+    configurable under **Settings → OSVVM HTML report** — absolute paths OK)
 - **Dedicated output directory** (default `output/`, configurable in Settings):
   passed to GHDL as `--workdir`, and used as the process **cwd**, so the work
   library (`work-obj*.cf`), object files (`*.o`), waveform dumps (`*.vcd`/`*.ghw`),
@@ -333,10 +333,11 @@ Files in `examples/adder/`:
    (`SetSaveWaves` writes a `.ghw` when possible). The first build compiles
    OSVVM and takes longer; later runs reuse `VHDL_LIBS/`.
 5. After a successful build, the **OSVVM Report** tab loads the HTML report
-   from **Settings → OSVVM HTML report** (default `build_all/build_all.html`
-   relative to the `.pro` directory). Use **Simulation → Open OSVVM HTML report**
-   to reopen it; adjust the path if your scripts write elsewhere
-   (e.g. `adder/index.html`).
+   from **Settings → OSVVM HTML report** (default
+   `build/build_all/build_all.html` relative to the `.pro` directory; absolute
+   paths are supported). Use **Simulation → Open OSVVM HTML report** to reopen
+   it. Example absolute path:
+   `…/test/vhdl/build/build_all/build_all.html`.
 
 Successful **OSVVM mode** run of `examples/adder/adder.pro`
 (**Build .pro (OSVVM)** — 13 affirmations passed, exit code 0):
