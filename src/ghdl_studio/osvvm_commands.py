@@ -137,49 +137,112 @@ def ghdl_bin_directory(ghdl_executable: str | None) -> str | None:
     return str(parent).replace("\\", "/")
 
 
-def build_osvvm_env_bootstrap(ghdl_executable: str | None = None) -> str:
+def resolve_ghdl_executable_path(ghdl_executable: str | None) -> str | None:
+    """Resolve a concrete GHDL binary path for OSVVM / Windows shims.
+
+    Prefers Settings, then ``PATH``. On Windows, prefers ``ghdl.exe`` over an
+    extensionless ``ghdl`` next to it (``where`` often lists both).
+    """
+    raw = (ghdl_executable or "").strip()
+    if raw:
+        path = Path(raw.replace("\\", "/")).expanduser()
+        if path.is_dir():
+            for name in ("ghdl.exe", "ghdl"):
+                candidate = path / name
+                if candidate.is_file():
+                    return str(candidate.resolve()).replace("\\", "/")
+            return None
+        exe_sibling = Path(str(path) + ".exe") if path.suffix == "" else path.with_suffix(".exe")
+        if path.suffix.lower() != ".exe" and exe_sibling.is_file():
+            return str(exe_sibling.resolve()).replace("\\", "/")
+        if path.is_file():
+            return str(path.resolve()).replace("\\", "/")
+        # Keep configured path even if missing (user machine / cross-OS tests).
+        if path.suffix.lower() != ".exe" and path.suffix == "":
+            return (str(path) + ".exe").replace("\\", "/")
+        return str(path).replace("\\", "/")
+    found = shutil.which("ghdl")
+    return found.replace("\\", "/") if found else None
+
+
+_WHICH_CMD_BODY = """@echo off
+setlocal EnableExtensions
+rem Unix `which` returns a single path. `where` prints every match; OSVVM then
+rem does `exec $ghdl --version` and breaks on multi-line / spaced paths.
+if /I "%~1"=="ghdl" if exist "%~dp0ghdl.cmd" (
+  echo %~dp0ghdl.cmd
+  exit /b 0
+)
+for /f "delims=" %%i in ('where %* 2^>nul') do (
+  echo %%i
+  exit /b 0
+)
+exit /b 1
+"""
+
+
+def install_windows_osvvm_shims(
+    shim_dir: str | Path,
+    ghdl_executable: str | None = None,
+) -> Path:
+    """Write ``which.cmd`` + optional ``ghdl.cmd`` into ``shim_dir``.
+
+    ``ghdl.cmd`` lives in a space-free directory and invokes the real GHDL with
+    quotes, so Tcl ``exec $ghdl --version`` works when GHDL is under
+    ``Program Files``.
+    """
+    directory = Path(shim_dir)
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "which.cmd").write_text(_WHICH_CMD_BODY, encoding="utf-8", newline="\r\n")
+
+    target = resolve_ghdl_executable_path(ghdl_executable)
+    if target:
+        bat_path = target.replace("/", "\\")
+        (directory / "ghdl.cmd").write_text(
+            f'@echo off\r\n"{bat_path}" %*\r\n',
+            encoding="utf-8",
+            newline="\r\n",
+        )
+    return directory.resolve()
+
+
+def build_osvvm_env_bootstrap(
+    ghdl_executable: str | None = None,
+    *,
+    windows_shim_dir: str | None = None,
+) -> str:
     """Return TCL that prepares PATH before ``source StartUp.tcl``.
 
-    OSVVM ``VendorScripts_GHDL.tcl`` runs ``exec which ghdl``. Native Windows
-    has no ``which`` command, so we install a tiny ``which.cmd`` shim that wraps
-    ``where``. The Settings GHDL directory is prepended to ``PATH`` on all
-    platforms so OSVVM finds the same GHDL the GUI uses.
+    OSVVM ``VendorScripts_GHDL.tcl`` runs ``exec which ghdl`` then
+    ``exec $ghdl --version``. Native Windows has no ``which``, and ``where``
+    can return multiple paths (and paths with spaces). When
+    ``windows_shim_dir`` is set (see :func:`install_windows_osvvm_shims`), that
+    directory is prepended on Windows so OSVVM sees a single space-free
+    ``ghdl.cmd``. The Settings GHDL directory is also prepended on all
+    platforms as a fallback.
     """
     bin_dir = ghdl_bin_directory(ghdl_executable)
     ghdl_dir_tcl = tcl_quote(bin_dir) if bin_dir else '""'
-    return f"""# GHDL Studio: PATH + Windows `which` shim for OSVVM VendorScripts_GHDL.tcl
+    shim_tcl = tcl_quote(str(Path(windows_shim_dir).resolve())) if windows_shim_dir else '""'
+    return f"""# GHDL Studio: PATH + Windows which/ghdl shims for OSVVM VendorScripts_GHDL.tcl
 set _gsGhdlDir {ghdl_dir_tcl}
+set _gsShimDir {shim_tcl}
 set _gsPrepend ""
-if {{$::tcl_platform(platform) eq "windows"}} {{
-  set _gsTemp ""
-  if {{[info exists ::env(TEMP)] && $::env(TEMP) ne ""}} {{
-    set _gsTemp $::env(TEMP)
-  }} elseif {{[info exists ::env(TMP)] && $::env(TMP) ne ""}} {{
-    set _gsTemp $::env(TMP)
-  }} else {{
-    set _gsTemp [pwd]
-  }}
-  set _gsShim [file normalize [file join $_gsTemp ghdl_studio_which_shim]]
-  file mkdir $_gsShim
-  set _gsCmd [file join $_gsShim which.cmd]
-  set _gsFh [open $_gsCmd w]
-  puts $_gsFh "@echo off"
-  puts $_gsFh "where %*"
-  close $_gsFh
-  set _gsPrepend $_gsShim
-  puts "GHDL Studio: installed Windows which.cmd shim in $_gsShim"
+if {{$::tcl_platform(platform) eq "windows" && $_gsShimDir ne ""}} {{
+  set _gsPrepend $_gsShimDir
+  puts "GHDL Studio: using Windows which/ghdl shims in $_gsShimDir"
 }}
 if {{$_gsGhdlDir ne ""}} {{
   if {{$_gsPrepend ne ""}} {{
     if {{$::tcl_platform(platform) eq "windows"}} {{
-      set _gsPrepend "$_gsGhdlDir;$_gsPrepend"
+      set _gsPrepend "$_gsPrepend;$_gsGhdlDir"
     }} else {{
-      set _gsPrepend "$_gsGhdlDir:$_gsPrepend"
+      set _gsPrepend "$_gsPrepend:$_gsGhdlDir"
     }}
   }} else {{
     set _gsPrepend $_gsGhdlDir
   }}
-  puts "GHDL Studio: prepended GHDL directory to PATH: $_gsGhdlDir"
+  puts "GHDL Studio: GHDL directory on PATH: $_gsGhdlDir"
 }}
 if {{$_gsPrepend ne ""}} {{
   if {{$::tcl_platform(platform) eq "windows"}} {{
@@ -196,6 +259,7 @@ def build_osvvm_batch_script(
     pro_file: str,
     *,
     ghdl_executable: str | None = None,
+    windows_shim_dir: str | None = None,
 ) -> str:
     """Return TCL source that loads OSVVM Scripts and builds a ``.pro`` file.
 
@@ -208,7 +272,10 @@ def build_osvvm_batch_script(
         raise ValueError("OSVVM StartUp.tcl path is required.")
     if not pro_file:
         raise ValueError("A .pro file path is required.")
-    bootstrap = build_osvvm_env_bootstrap(ghdl_executable)
+    bootstrap = build_osvvm_env_bootstrap(
+        ghdl_executable,
+        windows_shim_dir=windows_shim_dir,
+    )
     startup_q = tcl_quote(str(Path(startup_tcl).resolve()))
     pro_q = tcl_quote(str(Path(pro_file).resolve()))
     return f"""# Generated by GHDL Studio — do not edit
@@ -280,14 +347,22 @@ def prepare_osvvm_run(
     if not tclsh:
         raise ValueError("tclsh executable is required.")
 
+    directory = Path(script_dir or tempfile.gettempdir())
+    directory.mkdir(parents=True, exist_ok=True)
+    # Always materialise Windows shims next to the batch script. On non-Windows
+    # hosts they are unused at runtime but keep the batch script self-contained
+    # and unit-testable. On Windows, PATH prepend makes OSVVM use them.
+    shim_dir = install_windows_osvvm_shims(
+        directory / "ghdl_studio_which_shim",
+        ghdl_executable,
+    )
     content = build_osvvm_batch_script(
         str(startup),
         str(pro_path),
         ghdl_executable=ghdl_executable,
+        windows_shim_dir=str(shim_dir),
     )
-    directory = script_dir or tempfile.gettempdir()
-    Path(directory).mkdir(parents=True, exist_ok=True)
-    script_file = Path(directory) / "ghdl_studio_osvvm_run.tcl"
+    script_file = directory / "ghdl_studio_osvvm_run.tcl"
     script_file.write_text(content, encoding="utf-8")
 
     return OsvvmRunPlan(

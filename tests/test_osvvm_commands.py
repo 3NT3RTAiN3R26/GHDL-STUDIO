@@ -9,8 +9,10 @@ from ghdl_studio.osvvm_commands import (
     build_osvvm_env_bootstrap,
     find_recent_waveform,
     ghdl_bin_directory,
+    install_windows_osvvm_shims,
     is_pro_file,
     prepare_osvvm_run,
+    resolve_ghdl_executable_path,
     resolve_osvvm_html_report,
     resolve_startup_tcl,
     tcl_quote,
@@ -52,14 +54,47 @@ def test_ghdl_bin_directory():
     assert ghdl_bin_directory("/opt/ghdl/bin/ghdl").replace("\\", "/").endswith("/opt/ghdl/bin")
 
 
-def test_build_osvvm_env_bootstrap_windows_which_shim_and_path():
-    bootstrap = build_osvvm_env_bootstrap(r"C:\ghdl\bin\ghdl.exe")
+def test_resolve_ghdl_executable_path_prefers_exe(tmp_path):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    plain = bin_dir / "ghdl"
+    exe = bin_dir / "ghdl.exe"
+    plain.write_text("x", encoding="utf-8")
+    exe.write_text("y", encoding="utf-8")
+    assert resolve_ghdl_executable_path(str(plain)).endswith("ghdl.exe")
+    assert resolve_ghdl_executable_path(str(bin_dir)).endswith("ghdl.exe")
+    assert resolve_ghdl_executable_path(r"C:\Program Files (x86)\Ghdl\bin\ghdl") == (
+        "C:/Program Files (x86)/Ghdl/bin/ghdl.exe"
+    )
+
+
+def test_install_windows_osvvm_shims_single_path_and_quoted_target(tmp_path):
+    target = r"C:\Program Files (x86)\Ghdl\bin\ghdl.exe"
+    shim = install_windows_osvvm_shims(tmp_path / "shim", target)
+    which_body = (shim / "which.cmd").read_text(encoding="utf-8")
+    assert "for /f" in which_body
+    assert "exit /b 0" in which_body
+    assert "where %*" in which_body
+    # Must not dump every `where` match (OSVVM execs the whole string).
+    assert which_body.count("where %*") == 1
+    ghdl_cmd = (shim / "ghdl.cmd").read_text(encoding="utf-8")
+    assert '"C:\\Program Files (x86)\\Ghdl\\bin\\ghdl.exe"' in ghdl_cmd
+    assert "%*" in ghdl_cmd
+
+
+def test_build_osvvm_env_bootstrap_windows_which_shim_and_path(tmp_path):
+    shim = tmp_path / "ghdl_studio_which_shim"
+    shim.mkdir()
+    bootstrap = build_osvvm_env_bootstrap(
+        r"C:\ghdl\bin\ghdl.exe",
+        windows_shim_dir=str(shim),
+    )
     assert 'tcl_platform(platform) eq "windows"' in bootstrap
-    assert "which.cmd" in bootstrap
-    assert "where %*" in bootstrap
-    assert "ghdl_studio_which_shim" in bootstrap
+    assert "ghdl_studio_which_shim" in bootstrap.replace("\\", "/")
     assert "C:/ghdl/bin" in bootstrap.replace("\\", "/")
     assert 'set ::env(PATH)' in bootstrap
+    # Shim dir must be prepended before the real GHDL dir.
+    assert bootstrap.index("_gsShimDir") < bootstrap.index("set ::env(PATH)")
 
 
 def test_build_osvvm_batch_script_contains_source_and_build(tmp_path):
@@ -67,13 +102,19 @@ def test_build_osvvm_batch_script_contains_source_and_build(tmp_path):
     startup.write_text("#\n", encoding="utf-8")
     pro = tmp_path / "demo.pro"
     pro.write_text("analyze a.vhd\n", encoding="utf-8")
-    script = build_osvvm_batch_script(str(startup), str(pro))
+    shim = tmp_path / "shim"
+    shim.mkdir()
+    script = build_osvvm_batch_script(
+        str(startup),
+        str(pro),
+        windows_shim_dir=str(shim),
+    )
     assert "source {" in script
     assert "StartUp.tcl}" in script
     assert "build {" in script
     assert "demo.pro}" in script
-    # Windows which shim must run before StartUp.tcl (VendorScripts_GHDL).
-    assert script.index("which.cmd") < script.index("source {")
+    # Windows shim PATH setup must run before StartUp.tcl (VendorScripts_GHDL).
+    assert script.index("_gsShimDir") < script.index("source {")
     # Wrapper must tolerate OSVVM report failures after a PASSED simulate.
     assert "catch {build" in script
     assert "AnalyzeErrorCount" in script
@@ -102,8 +143,14 @@ def test_prepare_osvvm_run_writes_batch_script(tmp_path):
     assert Path(plan.script_path).is_file()
     text = Path(plan.script_path).read_text(encoding="utf-8")
     assert "source" in text and "build" in text
-    assert "which.cmd" in text
+    assert "ghdl_studio_which_shim" in text.replace("\\", "/")
     assert "ghdl-bin" in text.replace("\\", "/")
+    shim = Path(plan.script_path).parent / "ghdl_studio_which_shim"
+    assert (shim / "which.cmd").is_file()
+    assert (shim / "ghdl.cmd").is_file()
+    ghdl_cmd = (shim / "ghdl.cmd").read_text(encoding="utf-8")
+    assert "ghdl-bin" in ghdl_cmd.replace("\\", "/")
+    assert ghdl_cmd.strip().startswith("@echo off")
 
 
 def test_resolve_osvvm_html_report_default_relative(tmp_path):

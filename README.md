@@ -116,9 +116,10 @@ tests/                        # Unit tests for the Qt-independent modules
    - **OSVVM Scripts path** → `…/OsvvmLibraries/Scripts` or `…/OsvvmLibraries`
 4. At startup choose **OSVVM mode** and select your ``.pro`` file
 5. Set **Settings → GHDL executable** to your `ghdl` / `ghdl.exe` (or leave
-   auto-detect). On **native Windows**, OSVVM Scripts call Unix `which ghdl`;
-   GHDL Studio injects a `which.cmd` shim and prepends the GHDL directory to
-   `PATH` before `source StartUp.tcl`.
+   auto-detect). On **native Windows**, OSVVM Scripts call Unix `which ghdl`
+   then `exec $ghdl --version`. GHDL Studio installs space-free `which.cmd` /
+   `ghdl.cmd` shims (single path, quoted target under e.g. `Program Files`)
+   and prepends them to `PATH` before `source StartUp.tcl`.
 6. **Simulation → Build .pro (OSVVM)** runs
    `source StartUp.tcl` then `build <your.pro>`
 7. If the script writes a ``.ghw``/``.vcd`` next to the ``.pro``, GHDL Studio
