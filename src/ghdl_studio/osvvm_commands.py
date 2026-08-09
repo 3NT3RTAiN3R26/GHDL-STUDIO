@@ -18,6 +18,8 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from ghdl_studio.ghdl_commands import get_ghdl_version
+
 MODE_NORMAL = "normal"
 MODE_OSVVM = "osvvm"
 STUDIO_MODES = (MODE_NORMAL, MODE_OSVVM)
@@ -262,51 +264,54 @@ if {{$_gsPrepend ne ""}} {{
 
 
 def build_osvvm_mcode_coverage_guard_tcl() -> str:
-    """Return TCL that forces OSVVM coverage off when GHDL is mcode.
-
-    Official Windows GHDL builds are usually **mcode**. OSVVM coverage then
-    emits ``ghdl --elab-run … -o … -Wl,-lgcov``, which mcode rejects with
-    ``unknown command option '-o'``. Project ``.pro`` files that call
-    ``SetCoverageSimulateEnable true`` are intercepted after StartUp.
     """
-    return r"""# GHDL Studio: disable OSVVM coverage on mcode GHDL (no -o / -Wl support)
-namespace eval ::ghdlStudio {}
-set ::ghdlStudio::mcodeGhdl 0
-set ::ghdlStudio::ghdlVersion ""
-if {[catch {set ::ghdlStudio::ghdlVersion [exec ghdl --version]}]} {
-  catch {set ::ghdlStudio::ghdlVersion [exec ghdl -v]}
-}
-if {[string match -nocase "*mcode*" $::ghdlStudio::ghdlVersion]} {
-  set ::ghdlStudio::mcodeGhdl 1
-}
-proc ::ghdlStudio::wrapCoverageOff {procName} {
-  if {[llength [info commands $procName]] == 0} {
-    return
+    Return TCL that disables OSVVM code coverage for backends that break under gcov.
+
+    Project ``.pro`` files often call ``SetCoverageAnalyzeEnable true`` /
+    ``SetCoverageSimulateEnable true``. With GCC/LLVM GHDL that links ``-lgcov``,
+    re-running suites then fails with::
+
+        libgcov profiling error:...gcda:overwriting an existing profile data
+            with a different checksum
+
+    OSVVM treats those stderr lines as simulate failures even when all
+    affirmations passed.
+
+    Behaviour:
+    - **mcode** GHDL: always disable coverage (``-fprofile-arcs`` is unsupported).
+    - **GCC/LLVM** GHDL: disable coverage by default; set env
+      ``GHDL_STUDIO_OSVVM_COVERAGE=1`` to keep project coverage settings.
+    """
+    return r"""
+# GHDL Studio: avoid false SimulateError from libgcov / unsupported coverage flags.
+set _ghdl_studio_force_cov 0
+if {[info exists ::env(GHDL_STUDIO_OSVVM_COVERAGE)]} {
+  set _v [string trim $::env(GHDL_STUDIO_OSVVM_COVERAGE)]
+  if {$_v eq "1" || [string tolower $_v] eq "true" || [string tolower $_v] eq "yes"} {
+    set _ghdl_studio_force_cov 1
   }
-  set orig ::ghdlStudio::orig_$procName
-  if {[llength [info commands $orig]]} {
-    return
-  }
-  rename $procName $orig
-  proc $procName {{Enable true}} [string map [list %ORIG% $orig %NAME% $procName] {
-    if {$::ghdlStudio::mcodeGhdl} {
-      puts "GHDL Studio: %NAME% $Enable ignored (mcode GHDL cannot use coverage -o/-Wl)"
-      %ORIG% false
-    } else {
-      %ORIG% $Enable
-    }
-  }]
 }
-if {$::ghdlStudio::mcodeGhdl} {
-  puts "GHDL Studio: mcode GHDL detected — OSVVM code coverage will be forced off"
-  foreach _gsCov {SetCoverageEnable SetCoverageAnalyzeEnable SetCoverageSimulateEnable} {
-    ::ghdlStudio::wrapCoverageOff $_gsCov
+set _ghdl_studio_is_mcode 0
+if {[catch {exec ghdl --version} _ghdl_studio_ver] == 0} {
+  if {[string match -nocase "*mcode*" $_ghdl_studio_ver]} {
+    set _ghdl_studio_is_mcode 1
   }
-  catch {SetCoverageEnable false}
-  catch {SetCoverageAnalyzeEnable false}
-  catch {SetCoverageSimulateEnable false}
+}
+# mcode: never enable coverage. GCC/LLVM: off unless GHDL_STUDIO_OSVVM_COVERAGE=1.
+if {$_ghdl_studio_is_mcode || !$_ghdl_studio_force_cov} {
+  if {[catch {SetCoverageAnalyzeEnable false} _ghdl_studio_cov_err]} {
+    puts "GHDL Studio: SetCoverageAnalyzeEnable false: $_ghdl_studio_cov_err"
+  } else {
+    puts "GHDL Studio: CoverageAnalyzeEnable=false (avoid libgcov / mcode issues)"
+  }
+  if {[catch {SetCoverageSimulateEnable false} _ghdl_studio_cov_err]} {
+    puts "GHDL Studio: SetCoverageSimulateEnable false: $_ghdl_studio_cov_err"
+  } else {
+    puts "GHDL Studio: CoverageSimulateEnable=false (avoid libgcov / mcode issues)"
+  }
 }
 """
+
 
 
 def osvvm_library_has_randompkg(lib_dir: str | Path) -> bool:
@@ -544,38 +549,60 @@ def resolve_osvvm_precompile_target(
     return home
 
 
-def find_compiled_ghdl_lib_dir(library_directory: str) -> Path | None:
-    """Locate ``VHDL_LIBS/GHDL-*`` under an OSVVM ``SetLibraryDirectory`` root.
-
-    That directory is what Normal mode should pass as ``-P`` (it contains
-    compiled ``osvvm/``, ``work/``, …).
+def find_compiled_ghdl_lib_dir(
+    library_directory: Path | str,
+    *,
+    ghdl_bin: Path | str | None = None,
+) -> Path | None:
     """
-    root = Path(library_directory).expanduser()
-    if not root.is_dir():
+    Return the best GHDL library folder under library_directory/VHDL_LIBS.
+
+    Prefers a ``GHDL-<version>`` directory that matches the running GHDL binary
+    (via :func:`get_ghdl_version`). Falls back to the newest ``GHDL-*`` folder
+    by mtime when no version match is available.
+    """
+    root = Path(library_directory).expanduser().resolve()
+    # Caller may already pass …/VHDL_LIBS/GHDL-<ver> (e.g. after Settings apply).
+    if root.is_dir() and root.name.startswith("GHDL-"):
+        return root
+    vhdl_libs = root / "VHDL_LIBS"
+    if not vhdl_libs.is_dir():
+        # Also accept …/VHDL_LIBS directly.
+        if root.is_dir() and root.name == "VHDL_LIBS":
+            vhdl_libs = root
+        else:
+            return None
+    if not vhdl_libs.is_dir():
         return None
-    resolved = root.resolve()
-    if resolved.name.startswith("GHDL-") and (resolved / "osvvm").is_dir():
-        return resolved
-    if resolved.name == "VHDL_LIBS":
-        candidates = sorted(
-            (p for p in resolved.glob("GHDL-*") if p.is_dir()),
-            key=lambda p: p.stat().st_mtime,
-            reverse=True,
-        )
-        return candidates[0] if candidates else None
-    vhdl_libs = resolved / "VHDL_LIBS"
-    if vhdl_libs.is_dir():
-        candidates = sorted(
-            (p for p in vhdl_libs.glob("GHDL-*") if p.is_dir()),
-            key=lambda p: p.stat().st_mtime,
-            reverse=True,
-        )
-        if candidates:
-            return candidates[0]
-    # Already pointing at a tool lib dir that contains osvvm/
-    if (resolved / "osvvm").is_dir():
-        return resolved
-    return None
+    candidates = [
+        p for p in vhdl_libs.iterdir() if p.is_dir() and p.name.startswith("GHDL-")
+    ]
+    if not candidates:
+        return None
+
+    wanted: str | None = None
+    if ghdl_bin is not None:
+        try:
+            wanted = get_ghdl_version(Path(ghdl_bin))
+        except Exception:
+            wanted = None
+    if wanted:
+        for cand in candidates:
+            suffix = cand.name[len("GHDL-") :]
+            if suffix == wanted or suffix.startswith(wanted + ".") or wanted.startswith(suffix):
+                return cand.resolve()
+        # Also try major.minor prefix match (e.g. wanted 6.0.0 vs dir GHDL-6.0)
+        wanted_parts = wanted.split(".")
+        for n in range(len(wanted_parts), 0, -1):
+            prefix = ".".join(wanted_parts[:n])
+            for cand in candidates:
+                suffix = cand.name[len("GHDL-") :]
+                if suffix == prefix or suffix.startswith(prefix + "."):
+                    return cand.resolve()
+
+    candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    return candidates[0].resolve()
+
 
 
 def build_osvvm_precompile_script(
