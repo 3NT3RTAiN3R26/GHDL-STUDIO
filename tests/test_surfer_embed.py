@@ -12,6 +12,7 @@ from ghdl_studio.surfer_embed import (  # noqa: E402
     SurferEmbedder,
     _collect_descendant_pids,
     _container_embed_size,
+    _surfer_window_is_inside_container,
     _to_win32_long,
     ensure_linux_xcb_platform,
     find_surfer_executable,
@@ -193,6 +194,13 @@ def test_container_embed_size_uses_parent_when_container_is_tiny(qapp):
     width, height = _container_embed_size(child)
     assert width >= 400
     assert height >= 300
+
+
+def test_surfer_window_is_inside_container_false_for_invalid_host(qapp):
+    """Empty/unrealized Qt host must not be treated as a successful embed."""
+    host = QtWidgets.QWidget()
+    assert _surfer_window_is_inside_container(0, host) is False
+    assert _surfer_window_is_inside_container(42, host) is False
 
 
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="/proc ist Linux-spezifisch")
