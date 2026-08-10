@@ -256,9 +256,12 @@ def test_wsl_still_attempts_in_tab_embed(qapp, monkeypatch, tmp_path):
     parent = QtWidgets.QWidget()
     wave = tmp_path / "tb.ghw"
     wave.write_bytes(b"GHDLwave")
-    embedder.start("/usr/bin/surfer", str(wave), parent)
+    fake_surfer = tmp_path / "surfer"
+    fake_surfer.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    fake_surfer.chmod(0o755)
+    embedder.start(str(fake_surfer), str(wave), parent)
 
-    assert started == [("/usr/bin/surfer", [str(wave)])]
+    assert started == [(str(fake_surfer), [str(wave)])]
     assert events == []
     assert embedder._process is not None
     embedder._process = None  # avoid real QProcess teardown against the fake
