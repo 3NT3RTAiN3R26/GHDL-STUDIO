@@ -142,6 +142,7 @@ class MainWindow(QMainWindow):
 
         self._surfer_embedder = SurferEmbedder(self)
         self._surfer_embedder.embedded.connect(self._on_surfer_embedded)
+        self._surfer_embedder.opened_standalone.connect(self._on_surfer_opened_standalone)
         self._surfer_embedder.failed.connect(self._on_surfer_failed)
         self._surfer_page = QWidget(self)
         self._surfer_page_layout = QVBoxLayout(self._surfer_page)
@@ -1163,6 +1164,19 @@ class MainWindow(QMainWindow):
         self._waveform_status_label.setText("Waveform display: Surfer (embedded).")
         self._surfer_retry_button.setVisible(False)
         self._log_console.append_success("Surfer was successfully embedded in the Waveforms tab.")
+
+    def _on_surfer_opened_standalone(self, message: str) -> None:
+        """Surfer could not be embedded (typical on WSLg) but was opened separately.
+
+        Important for OSVVM ``.ghw`` waveforms: the internal viewer is VCD-only,
+        so a separate Surfer window is the working path.
+        """
+        self._clear_surfer_container()
+        self._waveform_stack.setCurrentIndex(_WAVEFORM_PAGE_INTERNAL)
+        self._waveform_status_label.setText("Waveform display: Surfer (separate window).")
+        self._log_console.append_success(message)
+        if self._settings.surfer_integration_enabled and self._settings.surfer_executable:
+            self._surfer_retry_button.setVisible(True)
 
     def _on_surfer_failed(self, reason: str) -> None:
         self._clear_surfer_container()

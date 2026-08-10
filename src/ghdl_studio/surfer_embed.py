@@ -814,17 +814,21 @@ class SurferEmbedder(QObject):
 
         embedder = SurferEmbedder(parent)
         embedder.embedded.connect(on_embedded)   # erhaelt das Container-QWidget
+        embedder.opened_standalone.connect(on_standalone)  # separates Fenster
         embedder.failed.connect(on_failed)        # erhaelt eine Fehlermeldung
         embedder.start(surfer_path, vcd_path, parent_widget)
     """
 
     embedded = Signal(QWidget)
+    opened_standalone = Signal(str)
     failed = Signal(str)
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self._process: QProcess | None = None
         self._parent_widget: QWidget | None = None
+        self._surfer_executable: str = ""
+        self._vcd_path: str = ""
         self._attempts = 0
         self._timer = QTimer(self)
         self._timer.setInterval(_POLL_INTERVAL_MS)
@@ -846,29 +850,48 @@ class SurferEmbedder(QObject):
     def start(self, surfer_executable: str, vcd_path: str, parent_widget: QWidget) -> None:
         """Startet Surfer fuer ``vcd_path`` und versucht anschliessend, das
         entstehende Fenster in ``parent_widget`` einzubetten. Ergebnis wird
-        ueber ``embedded``/``failed`` signalisiert."""
+        ueber ``embedded``/``opened_standalone``/``failed`` signalisiert."""
         self.stop()
+        self._surfer_executable = surfer_executable
+        self._vcd_path = vcd_path
+        self._parent_widget = parent_widget
+
+        # WSLg cannot reliably reparent Surfer (wgpu) into a Qt host. Opening a
+        # separate window is required for OSVVM .ghw (no internal viewer) and
+        # for Normal-mode VCD when embed fails. Opt into embed attempts with
+        # GHDL_STUDIO_FORCE_SURFER_EMBED=1.
+        force_embed = os.environ.get("GHDL_STUDIO_FORCE_SURFER_EMBED", "").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+        )
+        if _is_wsl() and not force_embed:
+            self._launch_standalone(surfer_executable, vcd_path)
+            self.opened_standalone.emit(
+                "WSLg: Surfer opened as a separate window "
+                "(in-tab embedding is not supported for Surfer/wgpu under WSLg)."
+            )
+            return
 
         if not is_embedding_supported():
             platform = qt_platform_name() or "unknown"
             if sys.platform.startswith("linux") and platform != "xcb":
-                self.failed.emit(
+                message = (
                     f"Embedding requires Qt-xcb (currently: {platform}). "
-                    "Surfer will open as a separate window; the internal viewer remains active. "
+                    "Surfer opened as a separate window; the internal viewer remains active. "
                     "For embedding as on Windows: install the X11 dependencies "
                     "(libxcb-cursor0, libxkbcommon-x11-0, …) and restart without "
                     "QT_QPA_PLATFORM=wayland."
                 )
             else:
-                self.failed.emit(
+                message = (
                     "Window embedding is not supported on this platform "
-                    "(Linux/X11 and Windows only). Surfer will open as a "
-                    "standalone window."
+                    "(Linux/X11 and Windows only). Surfer opened as a separate window."
                 )
             self._launch_standalone(surfer_executable, vcd_path)
+            self.opened_standalone.emit(message)
             return
 
-        self._parent_widget = parent_widget
         self._attempts = 0
         self._process = QProcess(self)
         self._process.setProcessEnvironment(_surfer_process_environment())
@@ -884,6 +907,27 @@ class SurferEmbedder(QObject):
         # Standalone: Surfer darf sein bevorzugtes Backend behalten (unter
         # Wayland-Sessions oft fluessiger). Kein WINIT_UNIX_BACKEND-Zwang.
         QProcess.startDetached(surfer_executable, [vcd_path])
+
+    def _open_standalone_fallback(self, detail: str) -> None:
+        """After a failed in-tab embed, reopen Surfer as a normal top-level window.
+
+        Critical for OSVVM ``.ghw`` dumps: the internal viewer is VCD-only, so a
+        failed embed must not leave the user without Surfer.
+        """
+        exe = self._surfer_executable
+        path = self._vcd_path
+        self.stop()
+        if exe and path:
+            self._launch_standalone(exe, path)
+            self.opened_standalone.emit(
+                f"Could not embed Surfer into the Waveforms tab ({detail}). "
+                "Opened Surfer as a separate window instead."
+            )
+            return
+        self.failed.emit(
+            f"Could not embed Surfer into the Waveforms tab ({detail}), "
+            "and Surfer could not be reopened as a separate window."
+        )
 
     def _poll_for_window(self) -> None:
         if self._process is None or not self.is_running():
@@ -906,7 +950,8 @@ class SurferEmbedder(QObject):
 
         if self._attempts >= _MAX_POLL_ATTEMPTS:
             self._timer.stop()
-            self.failed.emit(self._build_timeout_reason())
+            # Prefer a usable standalone Surfer over a hard failure (esp. OSVVM/GHW).
+            self._open_standalone_fallback(self._build_timeout_reason())
 
     def _build_timeout_reason(self) -> str:
         reason = "Surfer window was not found in time (timeout)."
@@ -1000,11 +1045,7 @@ class SurferEmbedder(QObject):
             return
 
         detail = "; ".join(errors) if errors else "unknown reason"
-        self.failed.emit(
-            "Could not embed Surfer into the Waveforms tab "
-            f"({detail}). Surfer may still be open as a separate window; "
-            "the internal viewer remains available."
-        )
+        self._open_standalone_fallback(detail)
 
     def _try_linux_qt_container_embed(
         self, win_id: int, parent: QWidget | None
@@ -1059,13 +1100,15 @@ class SurferEmbedder(QObject):
                 _embed_foreign_window_x11(win_id, container)
         except Exception as exc:  # noqa: BLE001 - dem Nutzer die Ursache anzeigen
             self._discard_linux_embed_container(container)
-            self.failed.emit(f"Surfer window could not be embedded: {exc}")
+            if backend == "windows":
+                self.failed.emit(f"Surfer window could not be embedded: {exc}")
+            else:
+                self._open_standalone_fallback(str(exc))
             return
         if backend != "windows" and not _surfer_window_is_inside_container(win_id, container):
             self._discard_linux_embed_container(container)
-            self.failed.emit(
-                "Surfer window is still top-level after XReparentWindow "
-                "(not inside the Waveforms host)."
+            self._open_standalone_fallback(
+                "Surfer window is still top-level after XReparentWindow"
             )
             return
         self.embedded.emit(container)

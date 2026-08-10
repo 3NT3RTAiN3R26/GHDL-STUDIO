@@ -203,6 +203,37 @@ def test_surfer_window_is_inside_container_false_for_invalid_host(qapp):
     assert _surfer_window_is_inside_container(42, host) is False
 
 
+def test_wsl_start_opens_standalone_without_embed_attempt(qapp, monkeypatch, tmp_path):
+    """WSLg cannot reparent Surfer; open a separate window (needed for OSVVM .ghw)."""
+    from ghdl_studio import surfer_embed as se
+
+    monkeypatch.setattr(se, "_is_wsl", lambda: True)
+    monkeypatch.delenv("GHDL_STUDIO_FORCE_SURFER_EMBED", raising=False)
+
+    launched: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        se.QProcess,
+        "startDetached",
+        staticmethod(lambda exe, args: launched.append((exe, args[0])) or True),
+    )
+
+    embedder = SurferEmbedder()
+    events: list[tuple[str, object]] = []
+    embedder.opened_standalone.connect(lambda msg: events.append(("standalone", msg)))
+    embedder.failed.connect(lambda msg: events.append(("failed", msg)))
+    embedder.embedded.connect(lambda w: events.append(("embedded", w)))
+
+    parent = QtWidgets.QWidget()
+    wave = tmp_path / "tb.ghw"
+    wave.write_bytes(b"GHDLwave")
+    embedder.start("/usr/bin/surfer", str(wave), parent)
+
+    assert launched == [("/usr/bin/surfer", str(wave))]
+    assert len(events) == 1 and events[0][0] == "standalone"
+    assert "WSLg" in str(events[0][1])
+    assert embedder.is_running() is False
+
+
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="/proc ist Linux-spezifisch")
 def test_collect_descendant_pids_finds_child_process():
     # Startet einen Kindprozess, der kurz lebt, und prueft, dass seine PID
