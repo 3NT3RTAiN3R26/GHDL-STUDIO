@@ -301,6 +301,9 @@ ghdl-studio --version
 
 The same version string appears under **Help → About GHDL Studio**.
 
+**User guide (screenshots):** [GHDL Studio documentation](https://3nt3rtaiN3r26.github.io/GHDL-STUDIO/)
+(GitHub Pages, version **0.6.0**).
+
 ## Try the example projects
 
 ### Counter (built-in testbench)
