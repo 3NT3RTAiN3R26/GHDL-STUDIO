@@ -33,6 +33,7 @@ import sys
 from PySide6.QtCore import (
     QEvent,
     QObject,
+    QPoint,
     QProcess,
     QProcessEnvironment,
     QSize,
@@ -73,17 +74,21 @@ def is_embedding_supported() -> bool:
 
 
 def _surfer_process_environment() -> QProcessEnvironment:
-    """Umgebung fuer den Surfer-Subprozess.
+    """Umgebung fuer den Surfer-Subprozess (Embed-Versuch).
 
-    Surfer (egui/winit) bevorzugt unter WSL oft Wayland, wenn
-    ``WAYLAND_DISPLAY`` gesetzt ist. Ein Wayland-Fenster laesst sich nicht
-    per X11-Reparenting einbetten. Deshalb erzwingen wir fuer den
-    Embed-Versuch X11/XWayland.
+    Surfer (egui/winit/wgpu) bevorzugt unter WSL oft Wayland, wenn
+    ``WAYLAND_DISPLAY`` gesetzt ist. Wayland-Fenster lassen sich nicht per
+    X11 einbetten. Fuer den Embed-Versuch erzwingen wir X11/XWayland und
+    bevorzugen den GL-Backend-Pfad — der laesst sich unter XWayland deutlich
+    zuverlaessiger reparenten als Vulkan.
     """
     env = QProcessEnvironment.systemEnvironment()
     if sys.platform.startswith("linux"):
         env.insert("WINIT_UNIX_BACKEND", "x11")
         env.remove("WAYLAND_DISPLAY")
+        # Prefer GL over Vulkan for X11 reparent / WSLg (override if user set one).
+        if not env.contains("WGPU_BACKEND") and not os.environ.get("WGPU_BACKEND"):
+            env.insert("WGPU_BACKEND", "gl")
     return env
 
 
@@ -489,6 +494,193 @@ def _surfer_window_is_inside_container(surfer_xid: int, container: QWidget) -> b
         return False
 
 
+def _x11_is_top_level(xid: int) -> bool:
+    """True when *xid* is a direct child of the X11 root window."""
+    if not xid:
+        return True
+    from Xlib import display  # noqa: PLC0415
+
+    conn = display.Display()
+    try:
+        root_id = int(conn.screen().root.id)
+        win = conn.create_resource_object("window", int(xid))
+        parent_id = int(win.query_tree().parent.id)
+        return parent_id == root_id
+    except Exception:  # noqa: BLE001
+        return True
+    finally:
+        try:
+            conn.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _x11_reparent_into_container(xid: int, container: QWidget) -> None:
+    """XReparent *xid* into *container* and map it (no resize-sync install)."""
+    from Xlib import X, display  # noqa: PLC0415
+    from Xlib.error import XError
+
+    container_xid = int(container.winId())
+    if not container_xid:
+        raise OSError("Qt container has no X11 window ID (winId=0).")
+    width, height = _container_embed_size(container)
+    conn = display.Display()
+    try:
+        child = conn.create_resource_object("window", int(xid))
+        parent = conn.create_resource_object("window", container_xid)
+        try:
+            child.unmap()
+            conn.sync()
+            child.reparent(parent, 0, 0)
+            child.configure(width=width, height=height, border_width=0, stack_mode=X.Above)
+            child.map()
+            conn.sync()
+        except XError as exc:
+            raise OSError(f"XReparentWindow failed: {exc}") from exc
+    finally:
+        try:
+            conn.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _x11_strip_wm_decorations(xid: int) -> None:
+    """Ask the WM to draw *xid* without decorations (Motif hints)."""
+    from Xlib import X, display  # noqa: PLC0415
+    from Xlib.protocol import event as xevent  # noqa: PLC0415
+
+    conn = display.Display()
+    try:
+        win = conn.create_resource_object("window", int(xid))
+        atom = conn.intern_atom("_MOTIF_WM_HINTS")
+        # flags=2 (decorations), decorations=0
+        data = [2, 0, 0, 0, 0]
+        win.change_property(atom, atom, 32, data)
+        conn.sync()
+        # Nudge the WM.
+        try:
+            root = conn.screen().root
+            ev = xevent.ClientMessage(
+                window=win,
+                client_type=atom,
+                data=(32, data),
+            )
+            root.send_event(ev, event_mask=X.SubstructureRedirectMask | X.SubstructureNotifyMask)
+            conn.sync()
+        except Exception:  # noqa: BLE001
+            pass
+    finally:
+        try:
+            conn.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _x11_move_resize_window(xid: int, x: int, y: int, width: int, height: int) -> None:
+    from Xlib import X, display  # noqa: PLC0415
+
+    conn = display.Display()
+    try:
+        win = conn.create_resource_object("window", int(xid))
+        win.configure(
+            x=max(x, 0),
+            y=max(y, 0),
+            width=max(width, 1),
+            height=max(height, 1),
+            border_width=0,
+            stack_mode=X.Above,
+        )
+        win.map()
+        conn.sync()
+    finally:
+        try:
+            conn.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+class _X11WaveformsHostSync(QObject):
+    """Keep Surfer visually inside the Waveforms host on Linux/WSLg.
+
+    1. Prefer real ``XReparentWindow`` into the Qt host (and retry if wgpu
+       recreates a top-level window).
+    2. If Surfer stays top-level (common under WSLg), fall back to aligning
+       Surfer's geometry with the host and stripping decorations — so it still
+       appears inside the Waveforms tab for Normal and OSVVM modes.
+    """
+
+    def __init__(self, pid: int, xid: int, container: QWidget) -> None:
+        super().__init__(container)
+        self._pid = int(pid)
+        self._xid = int(xid)
+        self._container = container
+        self._ticks = 0
+        self._timer = QTimer(self)
+        self._timer.setInterval(200)
+        self._timer.timeout.connect(self._tick)
+        self._timer.start()
+        container.installEventFilter(self)
+        # Immediate pass.
+        QTimer.singleShot(0, self._tick)
+        for delay_ms in (50, 200, 500, 1000, 2000):
+            QTimer.singleShot(delay_ms, self._tick)
+
+    def eventFilter(self, watched, event) -> bool:  # noqa: N802
+        if watched is self._container and event.type() in (
+            QEvent.Type.Resize,
+            QEvent.Type.Show,
+            QEvent.Type.Move,
+            QEvent.Type.Hide,
+        ):
+            self._tick()
+        return False
+
+    def _current_surfer_xid(self) -> int | None:
+        if self._pid:
+            found = _find_window_id_for_pid_x11(self._pid)
+            if found:
+                self._xid = int(found)
+                return self._xid
+        return self._xid or None
+
+    def _tick(self) -> None:
+        self._ticks += 1
+        if self._ticks > 150:  # ~30s of retries, then only event-driven
+            self._timer.stop()
+        xid = self._current_surfer_xid()
+        if not xid or not self._container.isVisible():
+            return
+        try:
+            if _surfer_window_is_inside_container(xid, self._container):
+                width, height = _container_embed_size(self._container)
+                _x11_move_resize_window(xid, 0, 0, width, height)
+                return
+            # Try reparent again (wgpu may have recreated a top-level window).
+            try:
+                _x11_reparent_into_container(xid, self._container)
+                if _surfer_window_is_inside_container(xid, self._container):
+                    return
+            except Exception:  # noqa: BLE001
+                pass
+            # Overlay fallback: place undecorated Surfer over the Waveforms host.
+            self._overlay_onto_host(xid)
+        except Exception:  # noqa: BLE001 - never break the Qt event loop
+            pass
+
+    def _overlay_onto_host(self, xid: int) -> None:
+        top_left = self._container.mapToGlobal(QPoint(0, 0))
+        dpr = float(self._container.devicePixelRatioF())
+        x = int(round(top_left.x() * dpr))
+        y = int(round(top_left.y() * dpr))
+        width = max(int(round(self._container.width() * dpr)), 1)
+        height = max(int(round(self._container.height() * dpr)), 1)
+        try:
+            _x11_strip_wm_decorations(xid)
+        except Exception:  # noqa: BLE001
+            pass
+        _x11_move_resize_window(xid, x, y, width, height)
+
+
 def _container_embed_size(container: QWidget) -> tuple[int, int]:
     """Ermittelt eine brauchbare Einbettungsgroesse (vermeidet 0x0 bei noch
     nicht sichtbarem Stack-Page)."""
@@ -814,17 +1006,21 @@ class SurferEmbedder(QObject):
 
         embedder = SurferEmbedder(parent)
         embedder.embedded.connect(on_embedded)   # erhaelt das Container-QWidget
+        embedder.opened_standalone.connect(on_standalone)  # separates Fenster
         embedder.failed.connect(on_failed)        # erhaelt eine Fehlermeldung
         embedder.start(surfer_path, vcd_path, parent_widget)
     """
 
     embedded = Signal(QWidget)
+    opened_standalone = Signal(str)
     failed = Signal(str)
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self._process: QProcess | None = None
         self._parent_widget: QWidget | None = None
+        self._surfer_executable: str = ""
+        self._vcd_path: str = ""
         self._attempts = 0
         self._timer = QTimer(self)
         self._timer.setInterval(_POLL_INTERVAL_MS)
@@ -846,29 +1042,31 @@ class SurferEmbedder(QObject):
     def start(self, surfer_executable: str, vcd_path: str, parent_widget: QWidget) -> None:
         """Startet Surfer fuer ``vcd_path`` und versucht anschliessend, das
         entstehende Fenster in ``parent_widget`` einzubetten. Ergebnis wird
-        ueber ``embedded``/``failed`` signalisiert."""
+        ueber ``embedded``/``opened_standalone``/``failed`` signalisiert."""
         self.stop()
+        self._surfer_executable = surfer_executable
+        self._vcd_path = vcd_path
+        self._parent_widget = parent_widget
 
         if not is_embedding_supported():
             platform = qt_platform_name() or "unknown"
             if sys.platform.startswith("linux") and platform != "xcb":
-                self.failed.emit(
+                message = (
                     f"Embedding requires Qt-xcb (currently: {platform}). "
-                    "Surfer will open as a separate window; the internal viewer remains active. "
+                    "Surfer opened as a separate window; the internal viewer remains active. "
                     "For embedding as on Windows: install the X11 dependencies "
                     "(libxcb-cursor0, libxkbcommon-x11-0, …) and restart without "
                     "QT_QPA_PLATFORM=wayland."
                 )
             else:
-                self.failed.emit(
+                message = (
                     "Window embedding is not supported on this platform "
-                    "(Linux/X11 and Windows only). Surfer will open as a "
-                    "standalone window."
+                    "(Linux/X11 and Windows only). Surfer opened as a separate window."
                 )
             self._launch_standalone(surfer_executable, vcd_path)
+            self.opened_standalone.emit(message)
             return
 
-        self._parent_widget = parent_widget
         self._attempts = 0
         self._process = QProcess(self)
         self._process.setProcessEnvironment(_surfer_process_environment())
@@ -884,6 +1082,27 @@ class SurferEmbedder(QObject):
         # Standalone: Surfer darf sein bevorzugtes Backend behalten (unter
         # Wayland-Sessions oft fluessiger). Kein WINIT_UNIX_BACKEND-Zwang.
         QProcess.startDetached(surfer_executable, [vcd_path])
+
+    def _open_standalone_fallback(self, detail: str) -> None:
+        """After a failed in-tab embed, reopen Surfer as a normal top-level window.
+
+        Critical for OSVVM ``.ghw`` dumps: the internal viewer is VCD-only, so a
+        failed embed must not leave the user without Surfer.
+        """
+        exe = self._surfer_executable
+        path = self._vcd_path
+        self.stop()
+        if exe and path:
+            self._launch_standalone(exe, path)
+            self.opened_standalone.emit(
+                f"Could not embed Surfer into the Waveforms tab ({detail}). "
+                "Opened Surfer as a separate window instead."
+            )
+            return
+        self.failed.emit(
+            f"Could not embed Surfer into the Waveforms tab ({detail}), "
+            "and Surfer could not be reopened as a separate window."
+        )
 
     def _poll_for_window(self) -> None:
         if self._process is None or not self.is_running():
@@ -906,7 +1125,8 @@ class SurferEmbedder(QObject):
 
         if self._attempts >= _MAX_POLL_ATTEMPTS:
             self._timer.stop()
-            self.failed.emit(self._build_timeout_reason())
+            # Prefer a usable standalone Surfer over a hard failure (esp. OSVVM/GHW).
+            self._open_standalone_fallback(self._build_timeout_reason())
 
     def _build_timeout_reason(self) -> str:
         reason = "Surfer window was not found in time (timeout)."
@@ -949,12 +1169,15 @@ class SurferEmbedder(QObject):
         self.failed.emit("Window embedding is not supported on this platform.")
 
     def _finish_embedding_linux(self, win_id: int) -> None:
-        """Embed Surfer on Linux/X11 into the Waveforms host widget.
+        """Embed Surfer into the Waveforms host for Normal and OSVVM modes.
 
-        Prefer a path that *actually* reparents the Surfer X11 window into the
-        Qt host. On WSLg, ``createWindowContainer`` often reports success while
-        Surfer remains a floating top-level window — verify with X11 parent
-        checks and fall back / fail honestly when that happens.
+        Strategy:
+        1. Create a visible native Qt host in the Waveforms tab.
+        2. ``XReparentWindow`` Surfer into that host (retry via keep-alive if
+           wgpu recreates a top-level window — common on WSLg).
+        3. If Surfer still refuses to be a child window, keep it visually inside
+           the tab by syncing geometry (undecorated overlay) — never leave the
+           user with only a floating Surfer outside Waveforms.
         """
         parent = self._parent_widget
         if parent is not None:
@@ -964,47 +1187,27 @@ class SurferEmbedder(QObject):
             parent.show()
             QApplication.processEvents()
 
-        errors: list[str] = []
-        # WSLg: try real XReparent first. Native Linux/xcb: try Qt foreign window first.
-        attempts = (
-            ("x11", self._try_linux_x_reparent_embed),
-            ("qt", self._try_linux_qt_container_embed),
-        )
-        if not _is_wsl():
-            attempts = (
-                ("qt", self._try_linux_qt_container_embed),
-                ("x11", self._try_linux_x_reparent_embed),
-            )
+        container = QWidget(parent)
+        container.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
+        container.setMinimumSize(QSize(200, 150))
+        container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        if parent is not None and parent.layout() is not None:
+            parent.layout().addWidget(container)
+        width, height = _container_embed_size(container)
+        container.resize(width, height)
+        container.show()
+        QApplication.processEvents()
 
-        for _name, attempt in attempts:
-            try:
-                container = attempt(win_id, parent)
-            except Exception as exc:  # noqa: BLE001
-                errors.append(str(exc))
-                continue
-            if container is None:
-                continue
-            if not _surfer_window_is_inside_container(win_id, container):
-                errors.append(
-                    "Surfer window is still top-level (not a child of the Waveforms host)"
-                )
-                self._discard_linux_embed_container(container)
-                continue
-            self.embedded.emit(container)
-            for delay_ms in (50, 200, 500):
-                resizer = getattr(container, "_ghdl_studio_resize_sync", None)
-                if resizer is not None and hasattr(resizer, "_resize_child"):
-                    QTimer.singleShot(delay_ms, resizer._resize_child)
-                else:
-                    QTimer.singleShot(delay_ms, container.update)
-            return
+        pid = int(self._process.processId()) if self._process is not None else 0
+        try:
+            _embed_foreign_window_x11(win_id, container)
+        except Exception as exc:  # noqa: BLE001
+            print(f"Note: initial XReparentWindow failed ({exc}); keeping host sync.", file=sys.stderr)
 
-        detail = "; ".join(errors) if errors else "unknown reason"
-        self.failed.emit(
-            "Could not embed Surfer into the Waveforms tab "
-            f"({detail}). Surfer may still be open as a separate window; "
-            "the internal viewer remains available."
-        )
+        # Durable sync: re-reparent or overlay so Surfer stays in the Waveforms tab.
+        host_sync = _X11WaveformsHostSync(pid, win_id, container)
+        container._ghdl_studio_host_sync = host_sync  # type: ignore[attr-defined]
+        self.embedded.emit(container)
 
     def _try_linux_qt_container_embed(
         self, win_id: int, parent: QWidget | None
@@ -1059,13 +1262,15 @@ class SurferEmbedder(QObject):
                 _embed_foreign_window_x11(win_id, container)
         except Exception as exc:  # noqa: BLE001 - dem Nutzer die Ursache anzeigen
             self._discard_linux_embed_container(container)
-            self.failed.emit(f"Surfer window could not be embedded: {exc}")
+            if backend == "windows":
+                self.failed.emit(f"Surfer window could not be embedded: {exc}")
+            else:
+                self._open_standalone_fallback(str(exc))
             return
         if backend != "windows" and not _surfer_window_is_inside_container(win_id, container):
             self._discard_linux_embed_container(container)
-            self.failed.emit(
-                "Surfer window is still top-level after XReparentWindow "
-                "(not inside the Waveforms host)."
+            self._open_standalone_fallback(
+                "Surfer window is still top-level after XReparentWindow"
             )
             return
         self.embedded.emit(container)
