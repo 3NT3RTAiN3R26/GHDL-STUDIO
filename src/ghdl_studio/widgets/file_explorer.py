@@ -27,6 +27,7 @@ from ghdl_studio.vhdl_scanner import is_data_file, is_verilog_file, is_vhdl_file
 MODE_NORMAL = "normal"
 MODE_OSVVM = "osvvm"
 
+_PATH_ROLE = Qt.ItemDataRole.UserRole
 _VERILOG_COLOR = QColor("#c586c0")
 _DATA_COLOR = QColor("#ce9178")
 _PRO_COLOR = QColor("#4ec9b0")
@@ -129,7 +130,7 @@ class FileExplorer(QWidget):
                 self.set_active_file(active or paths[0])
 
     def files(self) -> list[str]:
-        return [self._list.item(i).data(0) for i in range(self._list.count())]
+        return [str(self._list.item(i).data(_PATH_ROLE) or "") for i in range(self._list.count())]
 
     def clear_files(self) -> None:
         self._updating_checks = True
@@ -147,7 +148,7 @@ class FileExplorer(QWidget):
         for index in range(self._list.count()):
             item = self._list.item(index)
             if item.checkState() == Qt.CheckState.Checked:
-                return str(item.data(0) or "")
+                return str(item.data(_PATH_ROLE) or "")
         return ""
 
     def set_active_file(self, path: str) -> None:
@@ -159,7 +160,7 @@ class FileExplorer(QWidget):
         found = False
         for index in range(self._list.count()):
             item = self._list.item(index)
-            item_path = str(item.data(0) or "")
+            item_path = str(item.data(_PATH_ROLE) or "")
             checked = item_path == target
             item.setCheckState(Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked)
             self._style_pro_item(item, active=checked)
@@ -181,7 +182,7 @@ class FileExplorer(QWidget):
             if self._mode == MODE_OSVVM and not is_pro_file(normalized):
                 continue
             item = QListWidgetItem(Path(normalized).name)
-            item.setData(0, normalized)
+            item.setData(_PATH_ROLE, normalized)
             if self._mode == MODE_OSVVM:
                 item.setFlags(
                     item.flags()
@@ -229,7 +230,7 @@ class FileExplorer(QWidget):
         self._update_move_buttons()
 
     def _style_pro_item(self, item: QListWidgetItem, *, active: bool) -> None:
-        path = str(item.data(0) or "")
+        path = str(item.data(_PATH_ROLE) or "")
         item.setForeground(_PRO_ACTIVE_COLOR if active else _PRO_COLOR)
         marker = " (active)" if active else ""
         item.setText(f"{Path(path).name}{marker}")
@@ -248,7 +249,7 @@ class FileExplorer(QWidget):
         if self._updating_checks or self._mode != MODE_OSVVM:
             return
         if item.checkState() == Qt.CheckState.Checked:
-            path = str(item.data(0) or "")
+            path = str(item.data(_PATH_ROLE) or "")
             self._updating_checks = True
             for index in range(self._list.count()):
                 other = self._list.item(index)
@@ -264,7 +265,7 @@ class FileExplorer(QWidget):
 
         # Prevent leaving the list with no active .pro.
         if self._list.count() and not self.active_file():
-            self.set_active_file(str(item.data(0) or self.files()[0]))
+            self.set_active_file(str(item.data(_PATH_ROLE) or self.files()[0]))
 
     def _selected_rows(self) -> list[int]:
         return sorted({self._list.row(item) for item in self._list.selectedItems()})
@@ -340,7 +341,7 @@ class FileExplorer(QWidget):
         removed_active = False
         active = self.active_file()
         for item in list(self._list.selectedItems()):
-            path = str(item.data(0) or "")
+            path = str(item.data(_PATH_ROLE) or "")
             if path == active:
                 removed_active = True
             self._list.takeItem(self._list.row(item))
@@ -364,4 +365,4 @@ class FileExplorer(QWidget):
         self._move_selected(1)
 
     def _on_item_double_clicked(self, item: QListWidgetItem) -> None:
-        self.file_double_clicked.emit(item.data(0))
+        self.file_double_clicked.emit(str(item.data(_PATH_ROLE) or ""))

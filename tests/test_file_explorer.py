@@ -96,7 +96,7 @@ def osvvm_explorer(qapp, tmp_path):
 
 def test_osvvm_mode_hides_move_buttons(osvvm_explorer):
     widget, _paths = osvvm_explorer
-    assert not widget._order_row_widget.isVisible()
+    assert widget._order_row_widget.isHidden()
     widget._update_move_buttons()
     assert not widget._move_up_button.isEnabled()
     assert not widget._move_down_button.isEnabled()
