@@ -202,16 +202,15 @@ def install_windows_osvvm_shims(
     """
     directory = Path(shim_dir)
     directory.mkdir(parents=True, exist_ok=True)
-    (directory / "which.cmd").write_text(_WHICH_CMD_BODY, encoding="utf-8", newline="\r\n")
+    # Path.write_text(..., newline=) needs Python 3.10+; keep 3.9-compatible CRLF.
+    with (directory / "which.cmd").open("w", encoding="utf-8", newline="\r\n") as handle:
+        handle.write(_WHICH_CMD_BODY)
 
     target = resolve_ghdl_executable_path(ghdl_executable)
     if target:
         bat_path = target.replace("/", "\\")
-        (directory / "ghdl.cmd").write_text(
-            f'@echo off\r\n"{bat_path}" %*\r\n',
-            encoding="utf-8",
-            newline="\r\n",
-        )
+        with (directory / "ghdl.cmd").open("w", encoding="utf-8", newline="\r\n") as handle:
+            handle.write(f'@echo off\r\n"{bat_path}" %*\r\n')
     return directory.resolve()
 
 
