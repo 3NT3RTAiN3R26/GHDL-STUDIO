@@ -203,35 +203,65 @@ def test_surfer_window_is_inside_container_false_for_invalid_host(qapp):
     assert _surfer_window_is_inside_container(42, host) is False
 
 
-def test_wsl_start_opens_standalone_without_embed_attempt(qapp, monkeypatch, tmp_path):
-    """WSLg cannot reparent Surfer; open a separate window (needed for OSVVM .ghw)."""
+def test_wsl_still_attempts_in_tab_embed(qapp, monkeypatch, tmp_path):
+    """WSLg must try in-tab Surfer (reparent/overlay), not bail out to standalone-only."""
     from ghdl_studio import surfer_embed as se
 
     monkeypatch.setattr(se, "_is_wsl", lambda: True)
-    monkeypatch.delenv("GHDL_STUDIO_FORCE_SURFER_EMBED", raising=False)
+    monkeypatch.setattr(se, "is_embedding_supported", lambda: True)
 
-    launched: list[tuple[str, str]] = []
-    monkeypatch.setattr(
-        se.QProcess,
-        "startDetached",
-        staticmethod(lambda exe, args: launched.append((exe, args[0])) or True),
-    )
+    started: list[tuple[str, list[str]]] = []
+
+    class _FakeProcess:
+        @staticmethod
+        def startDetached(*_a, **_k):
+            raise AssertionError("WSL path must not fall back to startDetached immediately")
+
+        def __init__(self, *_a, **_k):
+            pass
+
+        def setProcessEnvironment(self, _env):  # noqa: N802
+            return None
+
+        def start(self, exe, args):
+            started.append((exe, list(args)))
+
+        def waitForStarted(self, _ms):  # noqa: N802
+            return True
+
+        def state(self):
+            from PySide6.QtCore import QProcess
+
+            return QProcess.ProcessState.Running
+
+        def processId(self):
+            return 4242
+
+        def kill(self):
+            return None
+
+        def waitForFinished(self, _ms):  # noqa: N802
+            return True
+
+        def deleteLater(self):  # noqa: N802
+            return None
+
+    monkeypatch.setattr(se, "QProcess", _FakeProcess)
 
     embedder = SurferEmbedder()
-    events: list[tuple[str, object]] = []
-    embedder.opened_standalone.connect(lambda msg: events.append(("standalone", msg)))
-    embedder.failed.connect(lambda msg: events.append(("failed", msg)))
-    embedder.embedded.connect(lambda w: events.append(("embedded", w)))
+    events: list[str] = []
+    embedder.opened_standalone.connect(lambda _m: events.append("standalone"))
+    embedder.failed.connect(lambda _m: events.append("failed"))
 
     parent = QtWidgets.QWidget()
     wave = tmp_path / "tb.ghw"
     wave.write_bytes(b"GHDLwave")
     embedder.start("/usr/bin/surfer", str(wave), parent)
 
-    assert launched == [("/usr/bin/surfer", str(wave))]
-    assert len(events) == 1 and events[0][0] == "standalone"
-    assert "WSLg" in str(events[0][1])
-    assert embedder.is_running() is False
+    assert started == [("/usr/bin/surfer", [str(wave)])]
+    assert events == []
+    assert embedder._process is not None
+    embedder._process = None  # avoid real QProcess teardown against the fake
 
 
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="/proc ist Linux-spezifisch")
