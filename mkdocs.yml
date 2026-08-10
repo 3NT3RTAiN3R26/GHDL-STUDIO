@@ -1,0 +1,64 @@
+site_name: GHDL Studio
+site_description: Cross-platform GUI for the GHDL VHDL simulator — Normal GHDL and OSVVM modes
+site_author: GHDL Studio contributors
+site_url: https://3nt3rtaiN3r26.github.io/GHDL-STUDIO/
+repo_url: https://github.com/3NT3RTAiN3R26/GHDL-STUDIO
+repo_name: 3NT3RTAiN3R26/GHDL-STUDIO
+edit_uri: edit/main/docs/
+copyright: Copyright &copy; GHDL Studio contributors
+
+docs_dir: docs
+site_dir: site
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: teal
+      accent: cyan
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: teal
+      accent: cyan
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.instant
+    - content.code.copy
+    - search.highlight
+    - toc.follow
+  icon:
+    repo: fontawesome/brands/github
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Getting started: getting-started.md
+  - Normal mode: normal-mode.md
+  - OSVVM mode: osvvm-mode.md
+  - Settings: settings.md
+  - Examples: examples.md
