@@ -29,6 +29,7 @@ import os
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 from PySide6.QtCore import (
     QEvent,
@@ -1047,6 +1048,13 @@ class SurferEmbedder(QObject):
         self._surfer_executable = surfer_executable
         self._vcd_path = vcd_path
         self._parent_widget = parent_widget
+
+        exe = Path(surfer_executable).expanduser()
+        if not (exe.is_file() or shutil.which(surfer_executable)):
+            self.failed.emit(
+                "Surfer could not be started. Is Surfer installed and on the PATH?"
+            )
+            return
 
         if not is_embedding_supported():
             platform = qt_platform_name() or "unknown"

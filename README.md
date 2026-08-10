@@ -1,5 +1,9 @@
 # GHDL Studio
 
+[![Tests](https://github.com/3NT3RTAiN3R26/GHDL-STUDIO/actions/workflows/tests.yml/badge.svg)](https://github.com/3NT3RTAiN3R26/GHDL-STUDIO/actions/workflows/tests.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/3NT3RTAiN3R26/GHDL-STUDIO/blob/main/LICENSE)
+[![GitHub release](https://img.shields.io/github/v/release/3NT3RTAiN3R26/GHDL-STUDIO)](https://github.com/3NT3RTAiN3R26/GHDL-STUDIO/releases/latest)
+
 A cross-platform graphical interface for [GHDL](https://ghdl.github.io/ghdl/),
 the open-source VHDL simulator. Built with **Python** and **PySide6** (Qt for Python),
 GHDL Studio runs unchanged on Linux, Windows and macOS.
