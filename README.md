@@ -24,7 +24,7 @@ On **every operating system** the interface uses a consistent dark theme
   VHDL); data files still count toward the project root so layouts such as
   `input/ref_wave_data.txt` next to `output/` work with TB paths like
   `../input/…`
-- Simple code editor with VHDL syntax highlighting for viewing/editing files
+- Simple code editor with **line numbers** and **VHDL / Verilog** syntax highlighting
 - **Choose the top-level entity with a click**: a toolbar on the main window shows a
   combo box of all VHDL entities found in the project files (updated automatically
   when files change); you can also type the name freely
@@ -98,8 +98,9 @@ src/ghdl_studio/
 └── widgets/
     ├── file_explorer.py       # Project file management
     ├── log_console.py          # Colour-coded output console
-    ├── code_editor.py           # Text editor for VHDL files
+    ├── code_editor.py           # Text editor (line numbers + HDL highlighting)
     ├── vhdl_highlighter.py       # VHDL syntax highlighting
+    ├── verilog_highlighter.py    # Verilog / SystemVerilog syntax highlighting
     ├── waveform_viewer.py         # Fallback waveform view from VCD data, including time ruler
     ├── startup_mode_dialog.py     # Normal vs OSVVM mode at startup
     └── run_settings_dialog.py     # Settings dialog (GHDL/Surfer/TCL/OSVVM paths)
