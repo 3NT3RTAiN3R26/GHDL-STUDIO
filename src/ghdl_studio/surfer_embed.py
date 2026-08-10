@@ -6,14 +6,13 @@ plattformspezifisches "Window Reparenting":
 
 - **Linux/X11**: Surfer wird als Subprozess gestartet, anschliessend wird
   dessen Top-Level-Fenster gefunden (benoetigt ``python-xlib``) und per
-  X11-``XReparentWindow`` in ein natives Qt-Container-Widget gehaengt
-  (analog zu ``SetParent`` unter Windows). Die Fenstersuche versucht
-  zuerst ``_NET_CLIENT_LIST`` (PID / Kind-PIDs), dann den kompletten
-  X11-Fensterbaum, zuletzt ``WM_CLASS``.
-  ``QWindow.fromWinId()`` wird bewusst *nicht* verwendet: Unter WSL/WSLg
-  und generell mit dem Qt-Wayland-Plugin schlaegt das mit
-  ``platform plugin does not support foreign windows`` fehl. Deshalb
-  startet die Anwendung unter Linux mit X11/XWayland bevorzugt das
+  ``QWindow.fromWinId`` + ``createWindowContainer`` (bevorzugt) bzw.
+  X11-``XReparentWindow`` (Fallback) in ein natives Qt-Container-Widget
+  gehaengt. Die Fenstersuche versucht zuerst ``_NET_CLIENT_LIST``
+  (PID / Kind-PIDs), dann den kompletten X11-Fensterbaum, zuletzt
+  ``WM_CLASS``. Der Surfer-Host (Waveforms-Stack-Page) muss dabei sichtbar
+  und groesser als 0×0 sein — sonst bleibt der Tab leer (WSL/Normal-Mode).
+  Deshalb startet die Anwendung unter Linux mit X11/XWayland bevorzugt das
   ``xcb``-Plugin (siehe ``ensure_linux_xcb_platform``).
 - **Windows**: Fenstersuche per WinAPI; Einbettung per ``SetParent`` +
   Stil-/Groessen-Sync (nicht ``QWindow.fromWinId``).
@@ -907,12 +906,32 @@ class SurferEmbedder(QObject):
     def _finish_embedding_linux(self, win_id: int) -> None:
         """Linux: zuerst Qt-``createWindowContainer`` (besser fuer Surfer/wgpu),
         sonst ``XReparentWindow``. Unter WSLg kann Letzteres optisch leer bleiben."""
-        # 1) Qt-Foreign-Window — unter xcb oft die einzige Variante, die
-        #    GPU-gerenderte Fenster (Surfer) sichtbar einbettet.
+        parent = self._parent_widget
+        # Prefill a usable host size while the Waveforms/Surfer stack page is
+        # already current (MainWindow switches to it before start()). Embedding
+        # into a hidden 0x0 page leaves a blank tab and "swallows" Surfer.
+        if parent is not None:
+            width, height = _container_embed_size(parent)
+            parent.resize(max(parent.width(), width), max(parent.height(), height))
+            parent.show()
+            QApplication.processEvents()
+
+        # 1) Qt-Foreign-Window — under xcb often the only path that keeps
+        #    GPU-rendered Surfer (wgpu) visible after reparent.
         if qt_platform_name() == "xcb":
             try:
-                container = _embed_foreign_window_x11_qt(win_id, self._parent_widget)
+                container = _embed_foreign_window_x11_qt(win_id, parent)
+                if parent is not None and parent.layout() is not None:
+                    if parent.layout().indexOf(container) < 0:
+                        parent.layout().addWidget(container)
+                width, height = _container_embed_size(container)
+                container.resize(width, height)
+                container.show()
+                QApplication.processEvents()
                 self.embedded.emit(container)
+                # Late layout / stack settle — force a redraw of the foreign window.
+                for delay_ms in (50, 200, 500):
+                    QTimer.singleShot(delay_ms, container.update)
                 return
             except Exception as qt_exc:  # noqa: BLE001
                 print(
@@ -922,13 +941,14 @@ class SurferEmbedder(QObject):
                 )
 
         # 2) Fallback: natives XReparenting
-        container = QWidget(self._parent_widget)
+        container = QWidget(parent)
         container.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
         container.setMinimumSize(QSize(200, 150))
         container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        parent = self._parent_widget
         if parent is not None and parent.layout() is not None:
             parent.layout().addWidget(container)
+        width, height = _container_embed_size(container)
+        container.resize(width, height)
         container.show()
         QApplication.processEvents()
         QTimer.singleShot(0, lambda: self._complete_os_embed(win_id, container, "x11"))
