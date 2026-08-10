@@ -583,7 +583,11 @@ def find_compiled_ghdl_lib_dir(
     wanted: str | None = None
     if ghdl_bin is not None:
         try:
-            wanted = get_ghdl_version(Path(ghdl_bin))
+            info = get_ghdl_version(str(ghdl_bin))
+            # get_ghdl_version returns GhdlVersionInfo, not a bare version string.
+            wanted = getattr(info, "version", None) or None
+            if wanted is not None:
+                wanted = str(wanted).strip() or None
         except Exception:
             wanted = None
     if wanted:

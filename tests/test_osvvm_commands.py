@@ -250,12 +250,41 @@ def test_find_compiled_ghdl_lib_dir_prefers_matching_version(tmp_path, monkeypat
     os.utime(older, (now, now))
 
     ghdl = tmp_path / "ghdl"
-    ghdl.write_text("#!/bin/sh\necho 'GHDL 6.0.0'\n", encoding="utf-8")
+    ghdl.write_text("#!/bin/sh\necho 'GHDL 6.0.0 (gcc code generator)'\n", encoding="utf-8")
     ghdl.chmod(0o755)
 
     from ghdl_studio import osvvm_commands as oc
+    from ghdl_studio.ghdl_commands import GhdlVersionInfo
 
-    monkeypatch.setattr(oc, "get_ghdl_version", lambda _bin: "6.0.0")
+    # Regression for issue #19: get_ghdl_version returns GhdlVersionInfo, not str.
+    monkeypatch.setattr(
+        oc,
+        "get_ghdl_version",
+        lambda _bin: GhdlVersionInfo(raw="GHDL 6.0.0 (gcc code generator)", version="6.0.0", backend="gcc"),
+    )
+    assert find_compiled_ghdl_lib_dir(str(root), ghdl_bin=str(ghdl)) == newer.resolve()
+
+
+def test_find_compiled_ghdl_lib_dir_uses_real_ghdl_version_info(tmp_path):
+    """End-to-end: fake ghdl --version -> GhdlVersionInfo.version -> GHDL-* match."""
+    root = tmp_path / "osvvm_ghdl"
+    older = root / "VHDL_LIBS" / "GHDL-4.1.0"
+    newer = root / "VHDL_LIBS" / "GHDL-6.0.0"
+    older.mkdir(parents=True)
+    newer.mkdir(parents=True)
+    import os
+    import time
+
+    now = time.time()
+    os.utime(newer, (now - 100, now - 100))
+    os.utime(older, (now, now))
+
+    ghdl = tmp_path / "ghdl"
+    ghdl.write_text(
+        "#!/bin/sh\necho 'GHDL 6.0.0 (gcc code generator)'\n",
+        encoding="utf-8",
+    )
+    ghdl.chmod(0o755)
     assert find_compiled_ghdl_lib_dir(str(root), ghdl_bin=str(ghdl)) == newer.resolve()
 
 
