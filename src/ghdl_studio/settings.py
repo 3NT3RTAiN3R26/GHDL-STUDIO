@@ -198,6 +198,32 @@ class AppSettings:
         self._set("last_pro_file", value)
 
     @property
+    def pro_files(self) -> list[str]:
+        """Ordered list of OSVVM ``.pro`` paths shown in Project files."""
+        raw = self._settings.value("pro_files", [], list) or []
+        result: list[str] = []
+        seen: set[str] = set()
+        for entry in raw:
+            path = str(entry or "").strip()
+            if not path or path in seen:
+                continue
+            seen.add(path)
+            result.append(path)
+        return result
+
+    @pro_files.setter
+    def pro_files(self, value: list[str]) -> None:
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for entry in value or []:
+            path = str(entry or "").strip()
+            if not path or path in seen:
+                continue
+            seen.add(path)
+            cleaned.append(path)
+        self._set("pro_files", cleaned)
+
+    @property
     def tcl_executable(self) -> str:
         stored = self._settings.value("tcl_executable", "", str)
         if stored:

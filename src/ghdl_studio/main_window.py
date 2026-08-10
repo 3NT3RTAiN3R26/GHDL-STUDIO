@@ -63,6 +63,8 @@ from ghdl_studio.vhdl_scanner import (
     is_vhdl_file,
 )
 from ghdl_studio.widgets.code_editor import CodeEditor
+from ghdl_studio.widgets.file_explorer import MODE_OSVVM as EXPLORER_MODE_OSVVM
+from ghdl_studio.widgets.file_explorer import MODE_NORMAL as EXPLORER_MODE_NORMAL
 from ghdl_studio.widgets.file_explorer import FileExplorer
 from ghdl_studio.widgets.html_report_view import HtmlReportView
 from ghdl_studio.widgets.log_console import (
@@ -136,6 +138,7 @@ class MainWindow(QMainWindow):
         self._file_explorer = FileExplorer(self)
         self._file_explorer.file_double_clicked.connect(self._open_file_in_editor)
         self._file_explorer.files_changed.connect(self._on_project_files_changed)
+        self._file_explorer.active_pro_changed.connect(self._on_active_pro_changed)
 
         self._log_console = LogConsole(self)
         self._waveform_viewer = WaveformViewer(self)
@@ -310,23 +313,32 @@ class MainWindow(QMainWindow):
         self._all_action.setVisible(not osvvm)
         self._build_pro_action.setVisible(osvvm)
         self._open_html_report_action.setVisible(osvvm)
-        self._add_files_action.setEnabled(not osvvm)
+        self._add_files_action.setEnabled(True)
+        self._add_files_action.setText(
+            "Add .pro file(s)..." if osvvm else "Add source file(s)..."
+        )
         # Always allow opening a .pro (switches into OSVVM mode).
         self._open_pro_action.setEnabled(True)
-        self._file_explorer.setEnabled(not osvvm)
+        self._file_explorer.setEnabled(True)
+        self._file_explorer.set_project_mode(
+            EXPLORER_MODE_OSVVM if osvvm else EXPLORER_MODE_NORMAL
+        )
         if hasattr(self, "_simulation_bar"):
             self._simulation_bar.setVisible(not osvvm)
         if not osvvm:
             self._hide_osvvm_report_tab()
 
         if osvvm:
+            self._seed_osvvm_pro_list()
             name = Path(self._pro_path).name if self._pro_path else "(no .pro)"
             self.setWindowTitle(f"GHDL Studio — OSVVM: {name}")
             self._settings.startup_mode = MODE_OSVVM
             if self._pro_path:
                 self._log_console.append_output(
-                    f"OSVVM mode: {self._pro_path}\n"
+                    f"OSVVM mode: active .pro = {self._pro_path}\n"
                     "Use Simulation → Build .pro (OSVVM). "
+                    "Check a .pro in Project files to switch the active script; "
+                    "double-click to edit it. "
                     "Requires tclsh and Settings → OSVVM Scripts path "
                     "(directory with StartUp.tcl)."
                 )
@@ -335,11 +347,56 @@ class MainWindow(QMainWindow):
             else:
                 self._log_console.append_output(
                     "OSVVM mode active, but no .pro file is selected. "
-                    "Use File → Open .pro…"
+                    "Use File → Open .pro… or Project files → Add .pro..."
                 )
+            self._persist_pro_files()
         else:
             self.setWindowTitle("GHDL Studio — Normal GHDL")
             self._settings.startup_mode = MODE_NORMAL
+
+    def _seed_osvvm_pro_list(self) -> None:
+        """Ensure Project files shows known .pro scripts and the active one."""
+        pros = [str(Path(p).expanduser().resolve()) for p in self._settings.pro_files if p]
+        active = str(Path(self._pro_path).resolve()) if self._pro_path else ""
+        if active and active not in pros:
+            pros.insert(0, active)
+        # If explorer already has the same set, only sync active.
+        current = self._file_explorer.files()
+        if set(current) != set(pros) or (pros and not current):
+            # Preserve Normal-mode cache; replace OSVVM list contents.
+            self._file_explorer.clear_files()
+            if pros:
+                self._file_explorer.add_files(pros)
+        if active:
+            self._file_explorer.set_active_file(active)
+        elif self._file_explorer.files():
+            self._pro_path = self._file_explorer.active_file() or self._file_explorer.files()[0]
+            self._file_explorer.set_active_file(self._pro_path)
+
+    def _persist_pro_files(self) -> None:
+        if self._mode != MODE_OSVVM:
+            return
+        files = self._file_explorer.files()
+        self._settings.pro_files = files
+        active = self._file_explorer.active_file() or self._pro_path
+        if active:
+            self._settings.last_pro_file = active
+            self._settings.last_project_dir = str(Path(active).parent)
+
+    def _on_active_pro_changed(self, path: str) -> None:
+        if self._mode != MODE_OSVVM:
+            return
+        previous = self._pro_path
+        self._pro_path = path or ""
+        if self._pro_path:
+            self.setWindowTitle(f"GHDL Studio — OSVVM: {Path(self._pro_path).name}")
+            self._settings.last_pro_file = self._pro_path
+            self._settings.last_project_dir = str(Path(self._pro_path).parent)
+            if self._pro_path != previous:
+                self._log_console.append_output(f"Active OSVVM .pro: {self._pro_path}")
+        else:
+            self.setWindowTitle("GHDL Studio — OSVVM: (no .pro)")
+        self._persist_pro_files()
 
     def _on_switch_mode(self) -> None:
         dialog = StartupModeDialog(self._settings, self)
@@ -366,9 +423,15 @@ class MainWindow(QMainWindow):
         )
         if not path:
             return
+        resolved = str(Path(path).resolve())
         self._mode = MODE_OSVVM
-        self._pro_path = str(Path(path).resolve())
+        self._pro_path = resolved
         self._apply_studio_mode()
+        # Ensure the opened script is listed, active, and editable.
+        self._file_explorer.add_files([resolved])
+        self._file_explorer.set_active_file(resolved)
+        self._persist_pro_files()
+        self._open_file_in_editor(resolved)
 
     def _tcl_executable_or_warn(self) -> str | None:
         executable = self._settings.tcl_executable or find_tclsh_executable() or ""
@@ -405,11 +468,15 @@ class MainWindow(QMainWindow):
         self._pending_chain = []
         if self._mode != MODE_OSVVM:
             return
+        active = self._file_explorer.active_file()
+        if active:
+            self._pro_path = active
         if not self._pro_path or not Path(self._pro_path).is_file():
             QMessageBox.warning(
                 self,
                 "No .pro file",
-                "Please open an OSVVM .pro file (File → Open .pro…).",
+                "Please open an OSVVM .pro file (File → Open .pro…) "
+                "or add one in Project files and check it as active.",
             )
             return
         tclsh = self._tcl_executable_or_warn()
@@ -575,7 +642,10 @@ class MainWindow(QMainWindow):
         self._run_options.stop_time = text.strip() or None
 
     def _on_project_files_changed(self, _files: list[str]) -> None:
-        self._refresh_top_unit_candidates()
+        if self._mode == MODE_OSVVM:
+            self._persist_pro_files()
+        else:
+            self._refresh_top_unit_candidates()
 
     def _refresh_top_unit_candidates(self) -> None:
         """Durchsucht die Projektdateien erneut nach VHDL-Entities und

@@ -119,14 +119,17 @@ tests/                        # Unit tests for the Qt-independent modules
 3. In GHDL Studio **Settings**, set:
    - **TCL executable** → `tclsh` (or Detect automatically)
    - **OSVVM Scripts path** → `…/OsvvmLibraries/Scripts` or `…/OsvvmLibraries`
-4. At startup choose **OSVVM mode** and select your ``.pro`` file
+4. At startup choose **OSVVM mode** and select your ``.pro`` file (or add
+   more later under **Project files** → **Add .pro...**). Check the box next
+   to the script that **Build .pro** should use; double-click a ``.pro`` to
+   open it in the **Editor** tab. Move up/down is hidden in OSVVM mode.
 5. Set **Settings → GHDL executable** to your `ghdl` / `ghdl.exe` (or leave
    auto-detect). On **native Windows**, OSVVM Scripts call Unix `which ghdl`
    then `exec $ghdl --version`. GHDL Studio installs space-free `which.cmd` /
    `ghdl.cmd` shims (single path, quoted target under e.g. `Program Files`)
    and prepends them to `PATH` before `source StartUp.tcl`.
 6. **Simulation → Build .pro (OSVVM)** runs
-   `source StartUp.tcl` then `build <your.pro>`
+   `source StartUp.tcl` then `build <active.pro>`
 7. If the script writes a ``.ghw``/``.vcd`` next to the ``.pro``, GHDL Studio
    tries to open it in Surfer / the Waveforms tab
 
