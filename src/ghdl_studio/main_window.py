@@ -9,6 +9,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
+    QApplication,
     QComboBox,
     QDialog,
     QDockWidget,
@@ -77,6 +78,28 @@ from ghdl_studio.widgets.waveform_viewer import WaveformViewer
 
 _WAVEFORM_PAGE_SURFER = 0
 _WAVEFORM_PAGE_INTERNAL = 1
+
+
+def resolve_existing_waveform(preferred: str | Path) -> Path | None:
+    """Return *preferred* if it exists, else a sibling ``.vcd``/``.ghw`` dump.
+
+    After Run, GHDL Studio expects the VCD next to the elaborated binary. Some
+    backends or option combinations only write ``.ghw``; callers should fall
+    back instead of silently skipping Surfer.
+    """
+    path = Path(preferred)
+    if path.is_file():
+        return path.resolve()
+    suffix = path.suffix.lower()
+    siblings: list[Path] = []
+    if suffix == ".vcd":
+        siblings.append(path.with_suffix(".ghw"))
+    elif suffix in {".ghw", ".fst"}:
+        siblings.append(path.with_suffix(".vcd"))
+    for candidate in siblings:
+        if candidate.is_file():
+            return candidate.resolve()
+    return None
 
 
 class MainWindow(QMainWindow):
@@ -1041,13 +1064,28 @@ class MainWindow(QMainWindow):
         self._log_console.append_error(f"Process could not be started: {error}")
 
     def _try_load_waveform(self, wave_path: str) -> None:
-        if not Path(wave_path).exists():
+        resolved = resolve_existing_waveform(wave_path)
+        if resolved is None:
+            self._log_console.append_output(
+                f"No waveform file found at '{wave_path}' "
+                "(also checked sibling .vcd/.ghw). Surfer was not started."
+            )
             return
+        if resolved != Path(wave_path).resolve():
+            self._log_console.append_output(
+                f"Expected waveform missing ({Path(wave_path).name}); "
+                f"using {resolved.name}."
+            )
+        wave_path = str(resolved)
 
         self._current_vcd_path = wave_path
         self._central_tabs.setCurrentWidget(self._waveform_tab)
 
         # Internal viewer supports VCD only; Surfer also opens GHW (OSVVM).
+        # Do NOT switch the waveform stack to the internal page before starting
+        # Surfer — embedding into a hidden Surfer page leaves a blank tab on
+        # WSL/X11 (createWindowContainer adopts a 0×0 host). Surfer failure
+        # still falls back to the internal viewer in `_on_surfer_failed`.
         if Path(wave_path).suffix.lower() == ".vcd":
             try:
                 data = parse_vcd(wave_path)
@@ -1056,7 +1094,6 @@ class MainWindow(QMainWindow):
                 self._start_surfer_for(wave_path)
                 return
             self._waveform_viewer.set_data(data)
-            self._waveform_stack.setCurrentIndex(_WAVEFORM_PAGE_INTERNAL)
         else:
             self._log_console.append_output(
                 f"Waveform is {Path(wave_path).suffix}; internal viewer "
@@ -1071,15 +1108,24 @@ class MainWindow(QMainWindow):
         self._surfer_retry_button.setVisible(False)
 
         if not self._settings.surfer_integration_enabled:
+            self._waveform_stack.setCurrentIndex(_WAVEFORM_PAGE_INTERNAL)
             self._waveform_status_label.setText("Waveform display: internal viewer (Surfer integration disabled).")
             return
 
         surfer_executable = self._settings.surfer_executable
         if not surfer_executable:
+            self._waveform_stack.setCurrentIndex(_WAVEFORM_PAGE_INTERNAL)
             self._waveform_status_label.setText(
                 "Waveform display: internal viewer (Surfer not found — check the path in Settings)."
             )
             return
+
+        # Show the Surfer host page before launch so Linux createWindowContainer
+        # / XReparent see a visible, sized parent (Normal mode previously kept
+        # the internal viewer page current).
+        self._waveform_stack.setCurrentIndex(_WAVEFORM_PAGE_SURFER)
+        self._surfer_page.show()
+        QApplication.processEvents()
 
         self._waveform_status_label.setText(
             "Starting and embedding Surfer... (this may take a few seconds)"

@@ -6,14 +6,13 @@ plattformspezifisches "Window Reparenting":
 
 - **Linux/X11**: Surfer wird als Subprozess gestartet, anschliessend wird
   dessen Top-Level-Fenster gefunden (benoetigt ``python-xlib``) und per
-  X11-``XReparentWindow`` in ein natives Qt-Container-Widget gehaengt
-  (analog zu ``SetParent`` unter Windows). Die Fenstersuche versucht
-  zuerst ``_NET_CLIENT_LIST`` (PID / Kind-PIDs), dann den kompletten
-  X11-Fensterbaum, zuletzt ``WM_CLASS``.
-  ``QWindow.fromWinId()`` wird bewusst *nicht* verwendet: Unter WSL/WSLg
-  und generell mit dem Qt-Wayland-Plugin schlaegt das mit
-  ``platform plugin does not support foreign windows`` fehl. Deshalb
-  startet die Anwendung unter Linux mit X11/XWayland bevorzugt das
+  ``QWindow.fromWinId`` + ``createWindowContainer`` (bevorzugt) bzw.
+  X11-``XReparentWindow`` (Fallback) in ein natives Qt-Container-Widget
+  gehaengt. Die Fenstersuche versucht zuerst ``_NET_CLIENT_LIST``
+  (PID / Kind-PIDs), dann den kompletten X11-Fensterbaum, zuletzt
+  ``WM_CLASS``. Der Surfer-Host (Waveforms-Stack-Page) muss dabei sichtbar
+  und groesser als 0×0 sein — sonst bleibt der Tab leer (WSL/Normal-Mode).
+  Deshalb startet die Anwendung unter Linux mit X11/XWayland bevorzugt das
   ``xcb``-Plugin (siehe ``ensure_linux_xcb_platform``).
 - **Windows**: Fenstersuche per WinAPI; Einbettung per ``SetParent`` +
   Stil-/Groessen-Sync (nicht ``QWindow.fromWinId``).
@@ -442,6 +441,51 @@ def _is_wsl() -> bool:
         with open("/proc/version", encoding="utf-8", errors="replace") as version_file:
             return "microsoft" in version_file.read().lower()
     except OSError:
+        return False
+
+
+def _x11_is_ancestor(ancestor_xid: int, child_xid: int) -> bool:
+    """True when *ancestor_xid* appears in the X11 parent chain of *child_xid*."""
+    if not ancestor_xid or not child_xid:
+        return False
+    from Xlib import display  # noqa: PLC0415
+
+    conn = display.Display()
+    try:
+        root_id = int(conn.screen().root.id)
+        current = int(child_xid)
+        for _ in range(64):
+            if current == int(ancestor_xid):
+                return True
+            if current in (0, root_id):
+                return False
+            win = conn.create_resource_object("window", current)
+            tree = win.query_tree()
+            current = int(tree.parent.id)
+        return False
+    finally:
+        try:
+            conn.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _surfer_window_is_inside_container(surfer_xid: int, container: QWidget) -> bool:
+    """Return True if Surfer's X11 window was actually reparented under *container*.
+
+    On WSLg, ``createWindowContainer`` often returns a Qt widget without
+    reparenting the foreign Surfer window — Surfer stays a top-level window
+    while the Waveforms tab gets an empty placeholder. Treat that as failure.
+    """
+    try:
+        container_xid = int(container.winId())
+    except Exception:  # noqa: BLE001
+        return False
+    if not container_xid:
+        return False
+    try:
+        return _x11_is_ancestor(container_xid, int(surfer_xid))
+    except Exception:  # noqa: BLE001
         return False
 
 
@@ -905,33 +949,107 @@ class SurferEmbedder(QObject):
         self.failed.emit("Window embedding is not supported on this platform.")
 
     def _finish_embedding_linux(self, win_id: int) -> None:
-        """Linux: zuerst Qt-``createWindowContainer`` (besser fuer Surfer/wgpu),
-        sonst ``XReparentWindow``. Unter WSLg kann Letzteres optisch leer bleiben."""
-        # 1) Qt-Foreign-Window — unter xcb oft die einzige Variante, die
-        #    GPU-gerenderte Fenster (Surfer) sichtbar einbettet.
-        if qt_platform_name() == "xcb":
-            try:
-                container = _embed_foreign_window_x11_qt(win_id, self._parent_widget)
-                self.embedded.emit(container)
-                return
-            except Exception as qt_exc:  # noqa: BLE001
-                print(
-                    f"Note: createWindowContainer failed ({qt_exc}); "
-                    "trying XReparentWindow…",
-                    file=sys.stderr,
-                )
+        """Embed Surfer on Linux/X11 into the Waveforms host widget.
 
-        # 2) Fallback: natives XReparenting
-        container = QWidget(self._parent_widget)
+        Prefer a path that *actually* reparents the Surfer X11 window into the
+        Qt host. On WSLg, ``createWindowContainer`` often reports success while
+        Surfer remains a floating top-level window — verify with X11 parent
+        checks and fall back / fail honestly when that happens.
+        """
+        parent = self._parent_widget
+        if parent is not None:
+            parent.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
+            width, height = _container_embed_size(parent)
+            parent.resize(max(parent.width(), width), max(parent.height(), height))
+            parent.show()
+            QApplication.processEvents()
+
+        errors: list[str] = []
+        # WSLg: try real XReparent first. Native Linux/xcb: try Qt foreign window first.
+        attempts = (
+            ("x11", self._try_linux_x_reparent_embed),
+            ("qt", self._try_linux_qt_container_embed),
+        )
+        if not _is_wsl():
+            attempts = (
+                ("qt", self._try_linux_qt_container_embed),
+                ("x11", self._try_linux_x_reparent_embed),
+            )
+
+        for _name, attempt in attempts:
+            try:
+                container = attempt(win_id, parent)
+            except Exception as exc:  # noqa: BLE001
+                errors.append(str(exc))
+                continue
+            if container is None:
+                continue
+            if not _surfer_window_is_inside_container(win_id, container):
+                errors.append(
+                    "Surfer window is still top-level (not a child of the Waveforms host)"
+                )
+                self._discard_linux_embed_container(container)
+                continue
+            self.embedded.emit(container)
+            for delay_ms in (50, 200, 500):
+                resizer = getattr(container, "_ghdl_studio_resize_sync", None)
+                if resizer is not None and hasattr(resizer, "_resize_child"):
+                    QTimer.singleShot(delay_ms, resizer._resize_child)
+                else:
+                    QTimer.singleShot(delay_ms, container.update)
+            return
+
+        detail = "; ".join(errors) if errors else "unknown reason"
+        self.failed.emit(
+            "Could not embed Surfer into the Waveforms tab "
+            f"({detail}). Surfer may still be open as a separate window; "
+            "the internal viewer remains available."
+        )
+
+    def _try_linux_qt_container_embed(
+        self, win_id: int, parent: QWidget | None
+    ) -> QWidget:
+        if qt_platform_name() != "xcb":
+            raise OSError(f"Qt platform is '{qt_platform_name() or 'unknown'}', not xcb")
+        container = _embed_foreign_window_x11_qt(win_id, parent)
+        if parent is not None and parent.layout() is not None:
+            if parent.layout().indexOf(container) < 0:
+                parent.layout().addWidget(container)
+        width, height = _container_embed_size(container)
+        container.resize(width, height)
+        container.show()
+        QApplication.processEvents()
+        # Give the compositor a brief moment before the parent-chain check.
+        QApplication.processEvents()
+        return container
+
+    def _try_linux_x_reparent_embed(
+        self, win_id: int, parent: QWidget | None
+    ) -> QWidget:
+        container = QWidget(parent)
         container.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
         container.setMinimumSize(QSize(200, 150))
         container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        parent = self._parent_widget
         if parent is not None and parent.layout() is not None:
             parent.layout().addWidget(container)
+        width, height = _container_embed_size(container)
+        container.resize(width, height)
         container.show()
         QApplication.processEvents()
-        QTimer.singleShot(0, lambda: self._complete_os_embed(win_id, container, "x11"))
+        _embed_foreign_window_x11(win_id, container)
+        return container
+
+    @staticmethod
+    def _discard_linux_embed_container(container: QWidget) -> None:
+        parent = container.parentWidget()
+        if parent is not None and parent.layout() is not None:
+            parent.layout().removeWidget(container)
+        container.hide()
+        resizer = getattr(container, "_ghdl_studio_resize_sync", None)
+        if resizer is not None and hasattr(resizer, "close_display"):
+            resizer.close_display()
+        container.deleteLater()
+        QApplication.processEvents()
 
     def _complete_os_embed(self, win_id: int, container: QWidget, backend: str) -> None:
         try:
@@ -939,25 +1057,15 @@ class SurferEmbedder(QObject):
                 _embed_foreign_window_windows(win_id, container)
             else:
                 _embed_foreign_window_x11(win_id, container)
-                if _is_wsl():
-                    # Surfer (wgpu) bleibt nach XReparent unter WSLg oft schwarz.
-                    # createWindowContainer wurde bereits versucht; Nutzer informieren.
-                    print(
-                        "Note: Under WSL/XWayland, embedded Surfer may appear blank "
-                        "(GPU window). If the tab stays empty: use Surfer separately "
-                        "or the internal viewer — embedding works more reliably under "
-                        "native Windows.",
-                        file=sys.stderr,
-                    )
         except Exception as exc:  # noqa: BLE001 - dem Nutzer die Ursache anzeigen
-            parent = container.parentWidget()
-            if parent is not None and parent.layout() is not None:
-                parent.layout().removeWidget(container)
-            container.hide()
-            resizer = getattr(container, "_ghdl_studio_resize_sync", None)
-            if resizer is not None and hasattr(resizer, "close_display"):
-                resizer.close_display()
-            container.deleteLater()
+            self._discard_linux_embed_container(container)
             self.failed.emit(f"Surfer window could not be embedded: {exc}")
+            return
+        if backend != "windows" and not _surfer_window_is_inside_container(win_id, container):
+            self._discard_linux_embed_container(container)
+            self.failed.emit(
+                "Surfer window is still top-level after XReparentWindow "
+                "(not inside the Waveforms host)."
+            )
             return
         self.embedded.emit(container)
