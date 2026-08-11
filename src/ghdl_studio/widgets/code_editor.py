@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import QRect, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QTextFormat
+from PySide6.QtGui import QColor, QFont, QPainter, QTextCursor, QTextFormat
 from PySide6.QtWidgets import QPlainTextEdit, QTextEdit, QWidget
 
 from ghdl_studio.osvvm_commands import is_pro_file
@@ -119,6 +119,27 @@ class CodeEditor(QPlainTextEdit):
         selection.cursor = self.textCursor()
         selection.cursor.clearSelection()
         self.setExtraSelections([selection])
+
+    def goto_line(self, line: int, column: int = 1) -> None:
+        """Move the cursor to 1-based *line* / *column* and center the view."""
+        block_number = max(0, int(line) - 1)
+        block = self.document().findBlockByNumber(block_number)
+        if not block.isValid():
+            block = self.document().lastBlock()
+        cursor = QTextCursor(block)
+        col = max(1, int(column))
+        # Move within the block without wrapping past its end.
+        max_col = max(1, block.length())  # includes block separator
+        offset = min(col - 1, max(0, max_col - 1))
+        if offset:
+            cursor.movePosition(
+                QTextCursor.MoveOperation.Right,
+                QTextCursor.MoveMode.MoveAnchor,
+                offset,
+            )
+        self.setTextCursor(cursor)
+        self.centerCursor()
+        self.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def save(self) -> None:
         Path(self.file_path).write_text(self.toPlainText(), encoding="utf-8")
