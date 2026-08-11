@@ -102,3 +102,14 @@ def test_code_editor_goto_line(qapp, tmp_path):
     assert cursor.blockNumber() == 2
     # Column 5 within "line3abc" → index 4
     assert cursor.positionInBlock() == 4
+
+
+def test_code_editor_find_and_replace_all(qapp, tmp_path):
+    path = tmp_path / "f.vhd"
+    path.write_text("alpha beta alpha\nalpha\n", encoding="utf-8")
+    editor = CodeEditor(str(path))
+    assert editor.highlight_find_matches("alpha") == 3
+    assert editor.find_text("beta") is True
+    assert editor.replace_all("alpha", "gamma") == 3
+    assert "gamma beta gamma" in editor.toPlainText()
+    assert editor.highlight_find_matches("alpha") == 0
