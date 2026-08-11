@@ -62,3 +62,14 @@ def test_verilog_highlighter_handles_block_comments(qapp):
     doc.setPlainText("module top;\n/* block\ncomment */\nendmodule\n")
     highlighter.rehighlight()
     assert doc.blockCount() >= 3
+
+
+def test_code_editor_goto_line(qapp, tmp_path):
+    path = tmp_path / "n.vhd"
+    path.write_text("line1\nline2\nline3abc\n", encoding="utf-8")
+    editor = CodeEditor(str(path))
+    editor.goto_line(3, 5)
+    cursor = editor.textCursor()
+    assert cursor.blockNumber() == 2
+    # Column 5 within "line3abc" → index 4
+    assert cursor.positionInBlock() == 4
