@@ -318,8 +318,8 @@ The same version string appears under **Help → About GHDL Studio**.
 ### Counter (built-in testbench)
 
 1. Start the GUI
-2. Via "Project files" → "Add file..." add the files from `examples/counter/`
-   (`counter.vhd`, then `counter_tb.vhd` — order is the compile order)
+2. **File → Open example → Counter (Normal)** (or via "Project files" →
+   "Add file..." add `examples/counter/counter.vhd` then `counter_tb.vhd`)
 3. In the toolbar click the "Top-level entity" drop-down arrow and
    select `counter_tb`; optionally enter a stop time such as `200ns`
 4. If needed, check the GHDL and Surfer paths in Settings (button

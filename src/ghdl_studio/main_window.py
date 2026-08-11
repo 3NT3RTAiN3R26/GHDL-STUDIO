@@ -27,6 +27,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ghdl_studio.examples_catalog import (
+    adder_normal_example,
+    adder_osvvm_example,
+    counter_example,
+    find_examples_root,
+)
 from ghdl_studio.ghdl_commands import (
     RunOptions,
     build_analyze_args,
@@ -236,6 +242,16 @@ class MainWindow(QMainWindow):
         self._switch_mode_action = QAction("Switch mode…", self)
         self._switch_mode_action.triggered.connect(self._on_switch_mode)
         file_menu.addAction(self._switch_mode_action)
+        examples_menu = file_menu.addMenu("Open example")
+        counter_action = QAction("Counter (Normal)", self)
+        counter_action.triggered.connect(self._on_open_example_counter)
+        examples_menu.addAction(counter_action)
+        adder_normal_action = QAction("Adder (Normal)", self)
+        adder_normal_action.triggered.connect(self._on_open_example_adder_normal)
+        examples_menu.addAction(adder_normal_action)
+        adder_osvvm_action = QAction("Adder (OSVVM .pro)", self)
+        adder_osvvm_action.triggered.connect(self._on_open_example_adder_osvvm)
+        examples_menu.addAction(adder_osvvm_action)
         file_menu.addSeparator()
         open_project_action = QAction("Open project…", self)
         open_project_action.setShortcut("Ctrl+O")
@@ -632,6 +648,80 @@ class MainWindow(QMainWindow):
             self.setWindowTitle(
                 f"GHDL Studio — {Path(saved).name} — OSVVM: {Path(self._pro_path).name}"
             )
+
+    def _on_open_example_counter(self) -> None:
+        self._load_example(counter_example())
+
+    def _on_open_example_adder_normal(self) -> None:
+        self._load_example(adder_normal_example())
+
+    def _on_open_example_adder_osvvm(self) -> None:
+        self._load_example(adder_osvvm_example())
+
+    def _load_example(self, spec) -> None:
+        if spec is None:
+            root = find_examples_root()
+            hint = (
+                f"Looked under: {root}"
+                if root
+                else "Set GHDL_STUDIO_EXAMPLES or run from the repository checkout."
+            )
+            QMessageBox.warning(
+                self,
+                "Examples not found",
+                "Could not locate the shipped examples directory.\n\n" + hint,
+            )
+            return
+        project = StudioProject(
+            mode=spec.mode,
+            files=list(spec.files),
+            pro_files=list(spec.pro_files),
+            active_pro=spec.active_pro,
+            top_unit=spec.top_unit,
+            stop_time=spec.stop_time,
+            std=self._run_options.std,
+            output_dir=self._run_options.output_dir,
+            osvvm_lib_path=self._run_options.osvvm_lib_path,
+            custom_lib_path=self._run_options.custom_lib_path,
+            generics=dict(self._run_options.generics),
+            extra_analyze_args=list(self._run_options.extra_analyze_args),
+            extra_elaborate_args=list(self._run_options.extra_elaborate_args),
+            extra_run_args=list(self._run_options.extra_run_args),
+        )
+        # Apply without treating it as a saved .ghdlstudio path.
+        self._studio_project_path = ""
+        self._run_options.top_unit = project.top_unit
+        self._run_options.stop_time = project.stop_time or None
+        self._file_explorer.replace_mode_files(MODE_NORMAL, project.files)
+        self._file_explorer.replace_mode_files(
+            MODE_OSVVM,
+            project.pro_files,
+            active=project.active_pro,
+        )
+        self._mode = project.normalized_mode()
+        self._pro_path = project.active_pro if self._mode == MODE_OSVVM else ""
+        if self._mode == MODE_OSVVM and project.pro_files:
+            self._settings.pro_files = project.pro_files
+            if self._pro_path:
+                self._settings.last_pro_file = self._pro_path
+                self._settings.last_project_dir = str(Path(self._pro_path).parent)
+        elif project.files:
+            self._settings.last_project_dir = str(Path(project.files[0]).parent)
+        self._apply_studio_mode()
+        if hasattr(self, "_top_unit_combo") and project.top_unit:
+            self._top_unit_combo.blockSignals(True)
+            if self._top_unit_combo.findText(project.top_unit) < 0:
+                self._top_unit_combo.addItem(project.top_unit)
+            self._top_unit_combo.setCurrentText(project.top_unit)
+            self._top_unit_combo.blockSignals(False)
+            self._run_options.top_unit = project.top_unit
+        if hasattr(self, "_stop_time_edit"):
+            self._stop_time_edit.setText(project.stop_time or "")
+        # Open the first interesting file in the editor.
+        open_path = project.active_pro or (project.files[0] if project.files else "")
+        if open_path:
+            self._open_file_in_editor(open_path)
+        self._log_console.append_success(f"Loaded example: {spec.name}")
 
     def _tcl_executable_or_warn(self) -> str | None:
         executable = self._settings.tcl_executable or find_tclsh_executable() or ""
