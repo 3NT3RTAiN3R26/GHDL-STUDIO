@@ -33,10 +33,19 @@ still help locate the project root so paths like `../input/…` work.
 - Line numbers
 - Syntax highlighting for **VHDL** and **Verilog / SystemVerilog**
 - Save with **Ctrl+S** / **File → Save**
+- Closing the app, a tab, or opening another project prompts **Save / Discard / Cancel** when editors or the `.ghdlstudio` project are dirty
 
 ## Output & waveforms
 
-The **Output** dock shows colour-coded GHDL (and OSVVM transcript) lines.
+The **Output** dock shows colour-coded GHDL (and OSVVM transcript) lines, plus a
+short **session history** of Analyze / Elaborate / Run / Build (timestamp + exit code).
+
+The **Problems** dock lists GHDL `file:line:col:error|warning` diagnostics
+(classic and split formats); double-click opens the editor at that location.
+The list clears when a new Analyze / Elaborate / Build starts.
+
+After a successful Normal-mode **Run**, if GCC coverage files (`.gcda` / `.gcno`)
+are present under `output/`, a short hint is logged (silent when none exist).
 
 After a successful Run, GHDL Studio opens the waveform in the **Waveforms** tab:
 

@@ -177,6 +177,10 @@ class LogConsole(QTextEdit):
         """Highlight a successful completion / status line."""
         self._append(text, QColor("#4ec9b0"))
 
+    def append_history(self, text: str) -> None:
+        """Highlight a session build-history line."""
+        self._append(text, QColor("#9cdcfe"))
+
     def _append(self, text: str, color: QColor, *, linkify: bool = False) -> None:
         cursor = self.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)

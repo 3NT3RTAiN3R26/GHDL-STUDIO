@@ -12,7 +12,13 @@ from ghdl_studio.ghdl_locations import (
 
 def test_parse_relative_error_location():
     loc = parse_ghdl_location('bad.vhd:5:3:error: no declaration for "x"')
-    assert loc == GhdlLocation(path="bad.vhd", line=5, column=3)
+    assert loc == GhdlLocation(
+        path="bad.vhd",
+        line=5,
+        column=3,
+        severity="error",
+        message='no declaration for "x"',
+    )
 
 
 def test_parse_absolute_warning_with_error_prefix():
@@ -23,6 +29,8 @@ def test_parse_absolute_warning_with_error_prefix():
     assert loc.path == "/tmp/proj/rt.vhd"
     assert loc.line == 1
     assert loc.column == 1
+    assert loc.severity == "warning"
+    assert "also defined" in loc.message
 
 
 def test_parse_split_ghdl_style_with_default_path():
@@ -34,7 +42,13 @@ def test_parse_split_ghdl_style_with_default_path():
         'Error: 24:31:error: missing ";" at end of statement',
         default_path=header,
     )
-    assert loc == GhdlLocation(path=header, line=24, column=31)
+    assert loc == GhdlLocation(
+        path=header,
+        line=24,
+        column=31,
+        severity="error",
+        message='missing ";" at end of statement',
+    )
 
 
 def test_parse_line_only_without_default_path_is_none():
