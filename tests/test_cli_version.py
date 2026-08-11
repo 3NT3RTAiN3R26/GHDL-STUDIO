@@ -17,7 +17,7 @@ def test_package_version_matches_pyproject():
         (line.split("=", 1)[1].strip().strip('"') for line in text.splitlines() if line.startswith("version =")),
         None,
     )
-    assert match == __version__ == "0.6.6"
+    assert match == __version__ == "0.7.0"
 
 
 def test_version_flag_prints_and_exits(capsys):
