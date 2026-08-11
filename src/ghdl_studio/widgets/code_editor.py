@@ -8,7 +8,9 @@ from PySide6.QtCore import QRect, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QTextFormat
 from PySide6.QtWidgets import QPlainTextEdit, QTextEdit, QWidget
 
+from ghdl_studio.osvvm_commands import is_pro_file
 from ghdl_studio.vhdl_scanner import is_verilog_file, is_vhdl_file
+from ghdl_studio.widgets.tcl_highlighter import TclHighlighter
 from ghdl_studio.widgets.verilog_highlighter import VerilogHighlighter
 from ghdl_studio.widgets.vhdl_highlighter import VhdlHighlighter
 
@@ -28,7 +30,7 @@ class _LineNumberArea(QWidget):
 
 
 class CodeEditor(QPlainTextEdit):
-    """Plain-text editor with line numbers and VHDL/Verilog highlighting."""
+    """Plain-text editor with line numbers and VHDL/Verilog/Tcl highlighting."""
 
     modified_changed = Signal(bool)
 
@@ -133,4 +135,7 @@ def _highlighter_for_path(file_path: str, document):
         return VerilogHighlighter(document)
     if is_vhdl_file(file_path):
         return VhdlHighlighter(document)
+    suffix = Path(file_path).suffix.lower()
+    if is_pro_file(file_path) or suffix == ".tcl":
+        return TclHighlighter(document)
     return None
