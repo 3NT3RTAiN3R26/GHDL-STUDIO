@@ -9,6 +9,7 @@ GHDL flags. Values persist via `QSettings` on every platform.
 
 | Setting | Role |
 |---------|------|
+| **Tool backend** | Windows only: **Native** or **WSL** (`wsl.exe` + `/mnt/c/…` paths) |
 | **GHDL executable** | Simulator binary (`Detect automatically` / Check version) |
 | **VHDL standard** | `87` / `93` / `00` / `02` / `08` |
 | **Output directory** | Workdir for Normal mode (`--workdir` + process cwd) |
@@ -16,7 +17,7 @@ GHDL flags. Values persist via `QSettings` on every platform.
 | **Custom lib path** | Extra `-P` directory |
 | **TCL executable** | Required for OSVVM `.pro` builds |
 | **OSVVM Scripts path** | Directory containing `StartUp.tcl` |
-| **OSVVM HTML report** | Report opened after Build (relative to `.pro` dir, or absolute) |
+| **OSVVM HTML report** | Preferred report after Build; if missing, auto-detect next to `.pro` |
 | **Surfer executable** | Waveform tool; optional embed into the Waveforms tab |
 
 ## Extra GHDL flags

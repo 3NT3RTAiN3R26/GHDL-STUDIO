@@ -92,6 +92,12 @@ from ghdl_studio.project_file import (
 )
 from ghdl_studio.surfer_embed import SurferEmbedder
 from ghdl_studio.settings import AppSettings
+from ghdl_studio.tool_backend import (
+    TOOL_BACKEND_WSL,
+    normalize_tool_backend,
+    probe_wsl,
+    wrap_for_backend,
+)
 from ghdl_studio.vcd_parser import parse_vcd
 from ghdl_studio.vhdl_scanner import (
     find_vhdl_entities,
@@ -865,6 +871,7 @@ class MainWindow(QMainWindow):
                 startup_tcl=startup,
                 pro_file=self._pro_path,
                 ghdl_executable=self._settings.ghdl_executable,
+                for_wsl=self._using_wsl_backend(),
             )
         except (OSError, ValueError) as exc:
             QMessageBox.warning(self, "OSVVM build", str(exc))
@@ -884,7 +891,7 @@ class MainWindow(QMainWindow):
             f"Working directory: {plan.cwd}\n"
             f"Batch script: {plan.script_path}"
         )
-        self._runner.run(plan.tclsh, [plan.script_path], cwd=plan.cwd, label="OSVVM Build")
+        self._run_tool(plan.tclsh, [plan.script_path], cwd=plan.cwd, label="OSVVM Build")
 
     def _start_osvvm_precompile(self) -> None:
         """Compile OSVVM into a GHDL library directory via OSVVM Scripts."""
@@ -918,6 +925,7 @@ class MainWindow(QMainWindow):
                 library_directory=dialog.library_directory,
                 target=dialog.target,
                 ghdl_executable=self._settings.ghdl_executable,
+                for_wsl=self._using_wsl_backend(),
             )
         except (OSError, ValueError) as exc:
             QMessageBox.warning(self, "Precompile OSVVM", str(exc))
@@ -931,7 +939,7 @@ class MainWindow(QMainWindow):
             f"Batch script: {plan.script_path}\n"
             f"StartUp.tcl: {startup}"
         )
-        self._runner.run(
+        self._run_tool(
             plan.tclsh,
             [plan.script_path],
             cwd=plan.cwd,
@@ -1364,6 +1372,53 @@ class MainWindow(QMainWindow):
             return False
         return True
 
+    def _tool_backend(self) -> str:
+        return normalize_tool_backend(self._settings.tool_backend)
+
+    def _using_wsl_backend(self) -> bool:
+        return self._tool_backend() == TOOL_BACKEND_WSL
+
+    def _ensure_wsl_backend_or_warn(self) -> bool:
+        """Return True when the configured backend can run tools."""
+        if not self._using_wsl_backend():
+            return True
+        ok, message = probe_wsl()
+        if ok:
+            return True
+        QMessageBox.warning(self, "WSL unavailable", message)
+        self._log_console.append_error(message)
+        return False
+
+    def _run_tool(
+        self,
+        executable: str,
+        args: list[str],
+        cwd: str | None,
+        label: str,
+    ) -> None:
+        """Launch a tool honouring Settings → Tool backend (Native / WSL)."""
+        if not self._ensure_wsl_backend_or_warn():
+            self._pending_chain = []
+            return
+        try:
+            invocation = wrap_for_backend(
+                executable,
+                args,
+                cwd,
+                backend=self._tool_backend(),
+            )
+        except RuntimeError as exc:
+            QMessageBox.warning(self, "Tool backend", str(exc))
+            self._log_console.append_error(str(exc))
+            self._pending_chain = []
+            return
+        self._runner.run(
+            invocation.executable,
+            invocation.args,
+            cwd=invocation.cwd,
+            label=label,
+        )
+
     def _ghdl_executable_or_warn(self) -> str | None:
         executable = self._settings.ghdl_executable
         if not executable:
@@ -1471,7 +1526,7 @@ class MainWindow(QMainWindow):
             extra_args=self._run_options.extra_analyze_args,
             library_paths=self._run_options.library_paths(),
         )
-        self._runner.run(executable, args, cwd=self._ghdl_process_cwd(), label="Analyze")
+        self._run_tool(executable, args, cwd=self._ghdl_process_cwd(), label="Analyze")
 
     def _start_elaborate(self) -> None:
         executable = self._ghdl_executable_or_warn()
@@ -1499,7 +1554,7 @@ class MainWindow(QMainWindow):
             extra_args=elaborate_extra,
             library_paths=self._run_options.library_paths(),
         )
-        self._runner.run(executable, args, cwd=self._ghdl_process_cwd(), label="Elaborate")
+        self._run_tool(executable, args, cwd=self._ghdl_process_cwd(), label="Elaborate")
 
     def _start_run(self) -> None:
         executable = self._ghdl_executable_or_warn()
@@ -1587,7 +1642,7 @@ class MainWindow(QMainWindow):
         # cwd=output so TB paths like ../input/*.txt resolve beside output/.
         elaborated = elaborated_executable_path(output_dir, self._run_options.top_unit)
         if elaborated is not None:
-            self._runner.run(elaborated, sim_opts, cwd=process_cwd, label="Run")
+            self._run_tool(elaborated, sim_opts, cwd=process_cwd, label="Run")
             return
 
         # mcode (or missing elaborate): fall back to ``ghdl -r`` + --workdir
@@ -1602,7 +1657,7 @@ class MainWindow(QMainWindow):
             extra_args=self._run_options.extra_run_args,
             library_paths=self._run_options.library_paths(),
         )
-        self._runner.run(executable, args, cwd=process_cwd, label="Run")
+        self._run_tool(executable, args, cwd=process_cwd, label="Run")
 
     def _run_clean(self) -> None:
         """Toolbar/menu Clean: ``ghdl --clean`` (Normal and OSVVM modes)."""
@@ -1641,7 +1696,7 @@ class MainWindow(QMainWindow):
             work_dir=work_dir,
             library_paths=library_paths,
         )
-        self._runner.run(executable, args, cwd=work_dir, label="Clean")
+        self._run_tool(executable, args, cwd=work_dir, label="Clean")
 
     def _finish_clean_side_effects(self) -> None:
         """After ``ghdl --clean``, reset waveforms and (Normal) wipe output/."""
@@ -1911,6 +1966,35 @@ class MainWindow(QMainWindow):
             self._waveform_status_label.setText(
                 "Waveform display: internal viewer (Surfer not found — check the path in Settings)."
             )
+            return
+
+        # WSL Surfer cannot be embedded into the native Windows Qt window.
+        if self._using_wsl_backend():
+            if not self._ensure_wsl_backend_or_warn():
+                self._waveform_stack.setCurrentIndex(_WAVEFORM_PAGE_INTERNAL)
+                return
+            try:
+                invocation = wrap_for_backend(
+                    surfer_executable,
+                    [vcd_path],
+                    cwd=str(Path(vcd_path).resolve().parent),
+                    backend=TOOL_BACKEND_WSL,
+                )
+            except RuntimeError as exc:
+                self._log_console.append_error(str(exc))
+                self._waveform_stack.setCurrentIndex(_WAVEFORM_PAGE_INTERNAL)
+                return
+            self._waveform_stack.setCurrentIndex(_WAVEFORM_PAGE_INTERNAL)
+            self._waveform_status_label.setText(
+                "Waveform display: Surfer via WSL (separate window)."
+            )
+            self._log_console.append_output(
+                f"Starting Surfer via WSL (standalone): {invocation.display}"
+            )
+            from PySide6.QtCore import QProcess
+
+            proc = QProcess(self)
+            proc.startDetached(invocation.executable, invocation.args)
             return
 
         # Show the Surfer host page before launch so Linux createWindowContainer

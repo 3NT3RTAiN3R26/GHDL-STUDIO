@@ -39,7 +39,10 @@ The **Project files** dock lists OSVVM scripts instead of HDL sources:
 2. Ensure the desired `.pro` is checked as **(active)**
 3. **Simulation → Build .pro (OSVVM)**
 4. On success, Studio may open:
-    - an **OSVVM Report** tab (HTML summary)
+    - an **OSVVM Report** tab — prefers **Settings → OSVVM HTML report** when
+      that file exists; otherwise auto-detects common layouts next to the
+      `.pro` (`build/build_all/…`, `build_all_windows/…`, `{stem}/{stem}.html`,
+      `index.html`, …) and logs whether Settings or auto-detect won
     - a waveform next to the `.pro` (`.ghw` / `.vcd`) when available
 
 ### Real run (adder example)

@@ -35,6 +35,14 @@ from ghdl_studio.osvvm_commands import (
 )
 from ghdl_studio.surfer_embed import find_surfer_executable, is_embedding_supported
 from ghdl_studio.settings import AppSettings
+from ghdl_studio.tool_backend import (
+    TOOL_BACKEND_NATIVE,
+    TOOL_BACKEND_WSL,
+    is_windows,
+    normalize_tool_backend,
+    probe_wsl,
+    wsl_which,
+)
 
 
 class RunSettingsDialog(QDialog):
@@ -43,6 +51,23 @@ class RunSettingsDialog(QDialog):
         self.setWindowTitle("Settings")
         self._settings = settings
         self._run_options = run_options
+
+        self._tool_backend_combo = QComboBox(self)
+        self._tool_backend_combo.addItem("Native (Windows / local PATH)", TOOL_BACKEND_NATIVE)
+        self._tool_backend_combo.addItem("WSL (wsl.exe → Linux tools)", TOOL_BACKEND_WSL)
+        backend = normalize_tool_backend(settings.tool_backend)
+        idx = self._tool_backend_combo.findData(backend)
+        self._tool_backend_combo.setCurrentIndex(max(0, idx))
+        self._tool_backend_combo.setToolTip(
+            "On Windows, optionally run GHDL, tclsh, and Surfer through WSL "
+            "(paths become /mnt/c/…). Requires wsl.exe. Surfer embedding stays "
+            "Native-only; WSL Surfer opens as a separate window."
+        )
+        if not is_windows():
+            self._tool_backend_combo.setEnabled(False)
+            self._tool_backend_combo.setToolTip(
+                "Tool backend WSL is only available on native Windows."
+            )
 
         self._ghdl_path_edit = QLineEdit(settings.ghdl_executable, self)
         browse_button = QPushButton("Browse...", self)
@@ -122,9 +147,10 @@ class RunSettingsDialog(QDialog):
         self._osvvm_html_edit = QLineEdit(settings.osvvm_html_report, self)
         self._osvvm_html_edit.setPlaceholderText(DEFAULT_OSVVM_HTML_REPORT)
         self._osvvm_html_edit.setToolTip(
-            "OSVVM mode: HTML report opened in a new tab after Build .pro. "
-            "Relative paths are resolved against the directory of the .pro file "
-            f"(default: {DEFAULT_OSVVM_HTML_REPORT})."
+            "OSVVM mode: preferred HTML report after Build .pro. Relative paths "
+            "are resolved against the .pro directory. If missing, GHDL Studio "
+            "auto-detects common layouts (build_all*, {stem}/{stem}.html, "
+            f"index.html, …). Default preference: {DEFAULT_OSVVM_HTML_REPORT}."
         )
         osvvm_html_browse_button = QPushButton("Browse...", self)
         osvvm_html_browse_button.clicked.connect(self._on_browse_osvvm_html)
@@ -212,6 +238,7 @@ class RunSettingsDialog(QDialog):
         run_flags_row.addWidget(reset_run_flags_button)
 
         form = QFormLayout()
+        form.addRow("Tool backend:", self._tool_backend_combo)
         form.addRow("GHDL executable:", ghdl_path_row)
         form.addRow("", check_button)
         form.addRow("VHDL standard:", self._std_combo)
@@ -245,7 +272,26 @@ class RunSettingsDialog(QDialog):
         if path:
             self._ghdl_path_edit.setText(path)
 
+    def _selected_tool_backend(self) -> str:
+        return normalize_tool_backend(str(self._tool_backend_combo.currentData() or ""))
+
     def _on_autodetect(self) -> None:
+        if self._selected_tool_backend() == TOOL_BACKEND_WSL:
+            ok, message = probe_wsl()
+            if not ok:
+                QMessageBox.warning(self, "WSL unavailable", message)
+                return
+            found = wsl_which("ghdl")
+            if found:
+                self._ghdl_path_edit.setText(found)
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Not found",
+                    "ghdl was not found inside WSL (wsl -e which ghdl). "
+                    "Install GHDL in your distro or enter the Linux path manually.",
+                )
+            return
         found = find_ghdl_executable()
         if found:
             self._ghdl_path_edit.setText(found)
@@ -273,6 +319,22 @@ class RunSettingsDialog(QDialog):
             self._tcl_path_edit.setText(path)
 
     def _on_autodetect_tcl(self) -> None:
+        if self._selected_tool_backend() == TOOL_BACKEND_WSL:
+            ok, message = probe_wsl()
+            if not ok:
+                QMessageBox.warning(self, "WSL unavailable", message)
+                return
+            found = wsl_which("tclsh") or wsl_which("tclsh8.6")
+            if found:
+                self._tcl_path_edit.setText(found)
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Not found",
+                    "tclsh was not found inside WSL. Install TCL in the distro "
+                    "(e.g. sudo apt install tcl) or enter the Linux path manually.",
+                )
+            return
         found = find_tclsh_executable()
         if found:
             self._tcl_path_edit.setText(found)
@@ -319,6 +381,24 @@ class RunSettingsDialog(QDialog):
             self._surfer_path_edit.setText(path)
 
     def _on_autodetect_surfer(self) -> None:
+        if self._selected_tool_backend() == TOOL_BACKEND_WSL:
+            ok, message = probe_wsl()
+            if not ok:
+                QMessageBox.warning(self, "WSL unavailable", message)
+                return
+            found = wsl_which("surfer")
+            if found:
+                self._surfer_path_edit.setText(found)
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Not found",
+                    "surfer was not found inside WSL. Install Surfer in the distro "
+                    "or enter the Linux path manually.\n\n"
+                    "Note: WSL Surfer opens as a separate window (no embed in the "
+                    "Windows GUI).",
+                )
+            return
         found = find_surfer_executable()
         if found:
             self._surfer_path_edit.setText(found)
@@ -356,6 +436,16 @@ class RunSettingsDialog(QDialog):
         self._run_flags_edit.setText(" ".join(DEFAULT_RUN_EXTRA_ARGS))
 
     def apply(self) -> None:
+        backend = self._selected_tool_backend()
+        if backend == TOOL_BACKEND_WSL:
+            ok, message = probe_wsl()
+            if not ok:
+                QMessageBox.warning(self, "WSL unavailable", message)
+                backend = TOOL_BACKEND_NATIVE
+                idx = self._tool_backend_combo.findData(backend)
+                if idx >= 0:
+                    self._tool_backend_combo.setCurrentIndex(idx)
+        self._settings.tool_backend = backend
         self._settings.ghdl_executable = self._ghdl_path_edit.text().strip()
         self._settings.surfer_executable = self._surfer_path_edit.text().strip()
         self._settings.surfer_integration_enabled = self._surfer_enabled_check.isChecked()

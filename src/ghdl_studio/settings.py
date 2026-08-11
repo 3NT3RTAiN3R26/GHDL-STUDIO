@@ -27,6 +27,10 @@ from ghdl_studio.osvvm_commands import (
     find_tclsh_executable,
 )
 from ghdl_studio.surfer_embed import find_surfer_executable
+from ghdl_studio.tool_backend import (
+    DEFAULT_TOOL_BACKEND,
+    normalize_tool_backend,
+)
 
 ORG_NAME = "GhdlStudio"
 APP_NAME = "GhdlStudio"
@@ -161,6 +165,16 @@ class AppSettings:
     @wave_format.setter
     def wave_format(self, value: str) -> None:
         self._set("wave_format", normalize_wave_format(value))
+
+    @property
+    def tool_backend(self) -> str:
+        """``native`` or ``wsl`` — how GHDL/tclsh/Surfer are launched on Windows."""
+        stored = self._settings.value("tool_backend", DEFAULT_TOOL_BACKEND, str)
+        return normalize_tool_backend(stored)
+
+    @tool_backend.setter
+    def tool_backend(self, value: str) -> None:
+        self._set("tool_backend", normalize_tool_backend(value))
 
     @property
     def last_project_dir(self) -> str:

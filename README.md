@@ -139,10 +139,33 @@ tests/                        # Unit tests for the Qt-independent modules
    then `exec $ghdl --version`. GHDL Studio installs space-free `which.cmd` /
    `ghdl.cmd` shims (single path, quoted target under e.g. `Program Files`)
    and prepends them to `PATH` before `source StartUp.tcl`.
+   Optional: **Settings → Tool backend → WSL** runs `tclsh` / GHDL through
+   `wsl.exe` with `/mnt/c/…` paths (Linux tools inside WSL; see below).
 6. **Simulation → Build .pro (OSVVM)** runs
    `source StartUp.tcl` then `build <active.pro>`
-7. If the script writes a ``.ghw``/``.vcd`` next to the ``.pro``, GHDL Studio
+7. After a successful build, GHDL Studio opens the **OSVVM Report** tab: it
+   prefers **Settings → OSVVM HTML report** when that file exists, otherwise
+   auto-detects common layouts next to the `.pro`
+   (`build/build_all/…`, `build_all_windows/…`, `{stem}/{stem}.html`,
+   `index.html`, …) and logs which path was chosen
+8. If the script writes a ``.ghw``/``.vcd`` next to the ``.pro``, GHDL Studio
    tries to open it in Surfer / the Waveforms tab
+
+### Windows: Native vs WSL tool backend (#18 / #41)
+
+On **native Windows**, **Settings → Tool backend** chooses how toolchains run:
+
+| Backend | Behaviour |
+|---------|-----------|
+| **Native** | Launch Windows `ghdl.exe` / `tclsh` / `surfer.exe` directly (default) |
+| **WSL** | Launch via `wsl.exe --cd <dir> -e <tool> …` with paths translated to `/mnt/c/…` |
+
+Use WSL when GHDL / OSVVM / TCL live in a Linux distro while the GUI runs on Windows.
+
+- Detect buttons in Settings resolve tools with `wsl -e which …` when WSL is selected
+- Analyze / Elaborate / Run / Clean / Build `.pro` / Precompile OSVVM all honour the backend
+- Surfer via WSL opens as a **separate window** (no Win32 embed of a Linux GUI)
+- If `wsl.exe` is missing or the distro is not ready, GHDL Studio shows a clear error and asks you to install WSL or switch back to Native
 
 Normal mode still supports OSVVM VHDL testbenches via **OSVVM lib path** (`-P`)
 and Analyze → Elaborate → Run (see the adder example below).
