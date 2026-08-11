@@ -241,6 +241,8 @@ class MainWindow(QMainWindow):
         open_project_action.setShortcut("Ctrl+O")
         open_project_action.triggered.connect(self._on_open_project)
         file_menu.addAction(open_project_action)
+        self._recent_projects_menu = file_menu.addMenu("Open recent project")
+        self._recent_projects_menu.aboutToShow.connect(self._rebuild_recent_projects_menu)
         save_project_action = QAction("Save project", self)
         save_project_action.setShortcut("Ctrl+Shift+S")
         save_project_action.triggered.connect(self._on_save_project)
@@ -548,6 +550,40 @@ class MainWindow(QMainWindow):
         else:
             self.setWindowTitle(f"GHDL Studio — {name}")
         self._log_console.append_success(f"Opened project: {self._studio_project_path}")
+        self._settings.remember_project(self._studio_project_path)
+
+    def open_studio_project_path(self, path: str) -> None:
+        """Load a ``.ghdlstudio`` file (e.g. from startup recent list)."""
+        try:
+            project = load_project_file(path)
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "Open project", str(exc))
+            return
+        self._apply_studio_project(project, project_path=path)
+
+    def _rebuild_recent_projects_menu(self) -> None:
+        menu = self._recent_projects_menu
+        menu.clear()
+        recent = self._settings.recent_projects
+        if not recent:
+            empty = QAction("(No recent projects)", self)
+            empty.setEnabled(False)
+            menu.addAction(empty)
+            return
+        for path in recent[:10]:
+            action = QAction(path, self)
+            action.setToolTip(path)
+            action.triggered.connect(
+                lambda _checked=False, p=path: self.open_studio_project_path(p)
+            )
+            menu.addAction(action)
+        menu.addSeparator()
+        clear_action = QAction("Clear recent projects", self)
+        clear_action.triggered.connect(self._clear_recent_projects)
+        menu.addAction(clear_action)
+
+    def _clear_recent_projects(self) -> None:
+        self._settings.recent_projects = []
 
     def _on_open_project(self) -> None:
         start = self._settings.last_project_dir or ""
@@ -559,12 +595,7 @@ class MainWindow(QMainWindow):
         )
         if not path:
             return
-        try:
-            project = load_project_file(path)
-        except (OSError, ValueError) as exc:
-            QMessageBox.warning(self, "Open project", str(exc))
-            return
-        self._apply_studio_project(project, project_path=path)
+        self.open_studio_project_path(path)
 
     def _on_save_project(self) -> None:
         if self._studio_project_path:
@@ -593,6 +624,7 @@ class MainWindow(QMainWindow):
             return
         self._studio_project_path = str(saved)
         self._settings.last_project_dir = str(Path(saved).parent)
+        self._settings.remember_project(str(saved))
         self._log_console.append_success(f"Saved project: {saved}")
         if self._mode == MODE_NORMAL:
             self.setWindowTitle(f"GHDL Studio — {Path(saved).name}")

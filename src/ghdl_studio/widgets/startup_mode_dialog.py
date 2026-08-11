@@ -13,6 +13,8 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMessageBox,
     QPushButton,
     QRadioButton,
@@ -32,13 +34,15 @@ class StartupModeDialog(QDialog):
         self.setWindowTitle("GHDL Studio — Choose mode")
         self.setModal(True)
         self._settings = settings
+        self._selected_project_path = ""
 
         intro = QLabel(
             "How do you want to work in this session?\n\n"
             "• Normal GHDL — add VHDL (and data) files manually, then "
             "Analyze / Elaborate / Run.\n"
             "• OSVVM — select a .pro script and run it via TCL "
-            "(OSVVM Scripts / StartUp.tcl).",
+            "(OSVVM Scripts / StartUp.tcl).\n"
+            "• Or open a recent ``.ghdlstudio`` project below.",
             self,
         )
         intro.setWordWrap(True)
@@ -81,6 +85,18 @@ class StartupModeDialog(QDialog):
         self._osvvm_radio.toggled.connect(self._update_pro_enabled)
         self._update_pro_enabled()
 
+        self._recent_list = QListWidget(self)
+        self._recent_list.setMinimumHeight(90)
+        self._recent_list.itemDoubleClicked.connect(self._on_recent_activated)
+        for path in settings.recent_projects[:8]:
+            item = QListWidgetItem(path)
+            item.setToolTip(path)
+            self._recent_list.addItem(item)
+        open_recent_btn = QPushButton("Open selected project", self)
+        open_recent_btn.clicked.connect(self._on_open_selected_recent)
+        open_recent_btn.setEnabled(self._recent_list.count() > 0)
+        recent_label = QLabel("Recent projects (.ghdlstudio)", self)
+
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
             self,
@@ -94,9 +110,12 @@ class StartupModeDialog(QDialog):
         layout.addWidget(self._osvvm_radio)
         layout.addLayout(pro_row)
         layout.addWidget(self._pro_hint)
+        layout.addWidget(recent_label)
+        layout.addWidget(self._recent_list)
+        layout.addWidget(open_recent_btn)
         layout.addWidget(self._remember_check)
         layout.addWidget(buttons)
-        self.resize(560, 300)
+        self.resize(620, 420)
 
     def _update_pro_enabled(self) -> None:
         enabled = self._osvvm_radio.isChecked()
@@ -139,7 +158,25 @@ class StartupModeDialog(QDialog):
             self._select_osvvm_mode()
             self._pro_edit.setText(path)
 
+    def _on_recent_activated(self, item: QListWidgetItem) -> None:
+        path = item.text().strip()
+        if path and Path(path).is_file():
+            self._selected_project_path = path
+            self.accept()
+
+    def _on_open_selected_recent(self) -> None:
+        item = self._recent_list.currentItem()
+        if item is None:
+            QMessageBox.information(
+                self,
+                "Recent projects",
+                "Select a project in the list, or use Normal / OSVVM mode below.",
+            )
+            return
+        self._on_recent_activated(item)
+
     def _on_accept(self) -> None:
+        self._selected_project_path = ""
         # Respect the radio selection. A leftover .pro path from a previous
         # OSVVM session must not override an explicit Normal GHDL choice
         # (issue #9).
@@ -153,6 +190,7 @@ class StartupModeDialog(QDialog):
                 self,
                 "No .pro file",
                 "Please select an OSVVM .pro file (Browse…), "
+                "choose a recent .ghdlstudio project, "
                 "or choose Normal GHDL mode instead.",
             )
             self._pro_edit.setFocus()
@@ -185,11 +223,19 @@ class StartupModeDialog(QDialog):
         return self._pro_edit.text().strip()
 
     @property
+    def selected_project_path(self) -> str:
+        """Non-empty when the user picked a recent ``.ghdlstudio`` project."""
+        return self._selected_project_path
+
+    @property
     def remember_choice(self) -> bool:
         return self._remember_check.isChecked()
 
     def apply_to_settings(self) -> None:
         """Persist the dialog choice to ``AppSettings``."""
+        if self._selected_project_path:
+            # Opening a project should not force "remember mode" alone.
+            return
         self._settings.startup_mode = self.selected_mode
         self._settings.remember_startup_mode = self.remember_choice
         if self.selected_mode == MODE_OSVVM:

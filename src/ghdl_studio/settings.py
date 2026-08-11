@@ -7,6 +7,8 @@ allen unterstuetzten Plattformen gleich verhaelt.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from PySide6.QtCore import QSettings
 
 from ghdl_studio.ghdl_commands import (
@@ -163,6 +165,58 @@ class AppSettings:
     @recent_files.setter
     def recent_files(self, value: list[str]) -> None:
         self._set("recent_files", value)
+
+    @property
+    def recent_projects(self) -> list[str]:
+        """Newest-first list of ``.ghdlstudio`` project paths (existing files only)."""
+        raw = self._settings.value("recent_projects", [], list) or []
+        result: list[str] = []
+        seen: set[str] = set()
+        for entry in raw:
+            path = str(entry or "").strip()
+            if not path or path in seen:
+                continue
+            expanded = Path(path).expanduser()
+            if not expanded.is_file():
+                continue
+            try:
+                resolved = str(expanded.resolve())
+            except OSError:
+                resolved = str(expanded)
+            if resolved in seen:
+                continue
+            seen.add(path)
+            seen.add(resolved)
+            result.append(resolved)
+        # Persist pruned list when stale entries were dropped.
+        if len(result) != len([e for e in raw if str(e or "").strip()]):
+            self._set("recent_projects", result)
+        return result
+
+    @recent_projects.setter
+    def recent_projects(self, value: list[str]) -> None:
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for entry in value or []:
+            path = str(entry or "").strip()
+            if not path or path in seen:
+                continue
+            seen.add(path)
+            cleaned.append(path)
+        self._set("recent_projects", cleaned[:20])
+
+    def remember_project(self, path: str, *, limit: int = 10) -> None:
+        """Push *path* to the front of :attr:`recent_projects`."""
+        if not path:
+            return
+        try:
+            resolved = str(Path(path).expanduser().resolve())
+        except OSError:
+            resolved = str(Path(path).expanduser())
+        if not Path(resolved).is_file():
+            return
+        current = [p for p in self.recent_projects if p != resolved]
+        self.recent_projects = [resolved, *current][: max(1, limit)]
 
     @property
     def startup_mode(self) -> str:

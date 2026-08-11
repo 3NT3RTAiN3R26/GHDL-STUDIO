@@ -34,27 +34,33 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _resolve_session(settings: AppSettings) -> tuple[str, str] | None:
-    """Return ``(mode, pro_path)`` or ``None`` if the user cancelled."""
+def _resolve_session(settings: AppSettings) -> tuple[str, str, str] | None:
+    """Return ``(mode, pro_path, project_path)`` or ``None`` if cancelled.
+
+    ``project_path`` is set when the user opens a recent ``.ghdlstudio`` file
+    from the startup dialog.
+    """
     # QSettings may return 0/1 or "true"/"false" depending on platform.
     if bool(settings.remember_startup_mode):
         mode = settings.startup_mode
         if mode == MODE_OSVVM:
             pro = (settings.last_pro_file or "").strip()
             if pro and Path(pro).expanduser().is_file():
-                return MODE_OSVVM, str(Path(pro).expanduser().resolve())
+                return MODE_OSVVM, str(Path(pro).expanduser().resolve()), ""
             # Remembered OSVVM without a valid .pro — fall through to dialog.
         elif mode == MODE_NORMAL:
-            return MODE_NORMAL, ""
+            return MODE_NORMAL, "", ""
 
     dialog = StartupModeDialog(settings)
     if dialog.exec() != QDialog.DialogCode.Accepted:
         return None
     dialog.apply_to_settings()
+    if dialog.selected_project_path:
+        return MODE_NORMAL, "", dialog.selected_project_path
     if dialog.selected_mode == MODE_OSVVM:
         pro = dialog.selected_pro_file.strip()
-        return MODE_OSVVM, str(Path(pro).expanduser().resolve())
-    return MODE_NORMAL, ""
+        return MODE_OSVVM, str(Path(pro).expanduser().resolve()), ""
+    return MODE_NORMAL, "", ""
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -96,9 +102,9 @@ def main(argv: list[str] | None = None) -> int:
     session = _resolve_session(settings)
     if session is None:
         return 0
-    mode, pro_path = session
+    mode, pro_path, project_path = session
 
-    if mode == MODE_OSVVM and not pro_path:
+    if mode == MODE_OSVVM and not pro_path and not project_path:
         QMessageBox.warning(
             None,
             "No .pro file",
@@ -109,6 +115,8 @@ def main(argv: list[str] | None = None) -> int:
 
     window = MainWindow(mode=mode, pro_path=pro_path or None)
     window.show()
+    if project_path:
+        window.open_studio_project_path(project_path)
     return app.exec()
 
 
