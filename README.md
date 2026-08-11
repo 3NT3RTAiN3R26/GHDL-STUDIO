@@ -39,6 +39,8 @@ On **every operating system** the interface uses a consistent dark theme
   when files change); you can also type the name freely
 - **Set the simulation stop time on the main window** (stop-time field in the same
   toolbar, e.g. `200ns`), without opening the settings dialog
+- **Edit GHDL generics on the main window** (`Generics…` on the simulation toolbar:
+  add/edit/remove `-gNAME=value` pairs; empty = no `-g` args; saved in `.ghdlstudio`)
 - Asynchronous execution of GHDL commands via `QProcess` (does not block the GUI):
   - **Analyze** (`ghdl -a`)
   - **Elaborate** (`ghdl -e`)
