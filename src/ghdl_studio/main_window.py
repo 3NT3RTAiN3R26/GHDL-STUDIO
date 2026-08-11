@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import time
 from pathlib import Path
@@ -17,6 +18,8 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMainWindow,
     QMessageBox,
     QPushButton,
@@ -27,6 +30,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ghdl_studio.build_history import (
+    BuildHistoryEntry,
+    append_build_history,
+    format_build_history_line,
+    make_build_history_entry,
+)
 from ghdl_studio.examples_catalog import (
     adder_normal_example,
     adder_osvvm_example,
@@ -43,10 +52,16 @@ from ghdl_studio.ghdl_commands import (
     clean_output_dir,
     elaborated_executable_path,
     ensure_osvvm_run_scaffold,
+    format_coverage_hint,
     stage_stimulus_files,
     stimulus_input_dir,
 )
-from ghdl_studio.ghdl_locations import GhdlLocation, resolve_ghdl_location_path
+from ghdl_studio.ghdl_locations import (
+    GhdlLocation,
+    parse_ghdl_file_header,
+    parse_ghdl_location,
+    resolve_ghdl_location_path,
+)
 from ghdl_studio.ghdl_runner import GhdlRunner
 from ghdl_studio.osvvm_commands import (
     MODE_NORMAL,
@@ -65,6 +80,7 @@ from ghdl_studio.project_file import (
     PROJECT_FILE_FILTER,
     StudioProject,
     load_project_file,
+    project_to_dict,
     save_project_file,
 )
 from ghdl_studio.surfer_embed import SurferEmbedder
@@ -90,12 +106,14 @@ from ghdl_studio.widgets.log_console import (
     strip_process_error_prefix_for_osvvm,
 )
 from ghdl_studio.widgets.precompile_osvvm_dialog import PrecompileOsvvmDialog
+from ghdl_studio.widgets.problems_panel import ProblemsPanel
 from ghdl_studio.widgets.run_settings_dialog import RunSettingsDialog
 from ghdl_studio.widgets.startup_mode_dialog import StartupModeDialog
 from ghdl_studio.widgets.waveform_viewer import WaveformViewer
 
 _WAVEFORM_PAGE_SURFER = 0
 _WAVEFORM_PAGE_INTERNAL = 1
+_BUILD_HISTORY_LIMIT = 20
 
 
 def resolve_existing_waveform(preferred: str | Path) -> Path | None:
@@ -133,6 +151,9 @@ class MainWindow(QMainWindow):
         self._mode = mode if mode in (MODE_NORMAL, MODE_OSVVM) else MODE_NORMAL
         self._pro_path = str(Path(pro_path).resolve()) if pro_path else ""
         self._studio_project_path: str = ""
+        self._project_snapshot: str | None = None
+        self._build_history: list[BuildHistoryEntry] = []
+        self._diag_last_path: str | None = None
         self._osvvm_run_started_at: float | None = None
         self._pending_precompile_lib_dir: str | None = None
         self._pending_precompile_update_path: bool = False
@@ -159,6 +180,25 @@ class MainWindow(QMainWindow):
 
         self._log_console = LogConsole(self)
         self._log_console.location_activated.connect(self._on_log_location_activated)
+
+        self._build_history_list = QListWidget(self)
+        self._build_history_list.setObjectName("build_history_list")
+        self._build_history_list.setMaximumHeight(90)
+        self._build_history_list.setToolTip(
+            "Recent Analyze / Elaborate / Run / Build results in this session."
+        )
+
+        output_host = QWidget(self)
+        output_layout = QVBoxLayout(output_host)
+        output_layout.setContentsMargins(0, 0, 0, 0)
+        output_layout.setSpacing(2)
+        output_layout.addWidget(QLabel("Session history", output_host))
+        output_layout.addWidget(self._build_history_list)
+        output_layout.addWidget(self._log_console, 1)
+
+        self._problems_panel = ProblemsPanel(self)
+        self._problems_panel.location_activated.connect(self._on_log_location_activated)
+
         self._waveform_viewer = WaveformViewer(self)
 
         self._surfer_embedder = SurferEmbedder(self)
@@ -216,8 +256,15 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, files_dock)
 
         log_dock = QDockWidget("Output", self)
-        log_dock.setWidget(self._log_console)
+        log_dock.setWidget(output_host)
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, log_dock)
+
+        problems_dock = QDockWidget("Problems", self)
+        problems_dock.setObjectName("problems_dock")
+        problems_dock.setWidget(self._problems_panel)
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, problems_dock)
+        self.tabifyDockWidget(log_dock, problems_dock)
+        log_dock.raise_()
 
         self._create_menu()
         self._create_toolbar()
@@ -229,7 +276,7 @@ class MainWindow(QMainWindow):
         self._current_vcd_path: str | None = None
         self._find_dialog: FindReplaceDialog | None = None
         self._apply_studio_mode()
-
+        self._capture_project_snapshot()
     def _create_menu(self) -> None:
         menu_bar = self.menuBar()
 
@@ -457,6 +504,8 @@ class MainWindow(QMainWindow):
         self._persist_pro_files()
 
     def _on_switch_mode(self) -> None:
+        if not self._confirm_proceed_despite_unsaved(context="switch mode"):
+            return
         dialog = StartupModeDialog(self._settings, self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
@@ -468,8 +517,11 @@ class MainWindow(QMainWindow):
             else ""
         )
         self._apply_studio_mode()
+        self._capture_project_snapshot()
 
     def _on_open_pro(self) -> None:
+        if not self._confirm_proceed_despite_unsaved(context="open .pro"):
+            return
         start_dir = str(Path(self._pro_path).parent) if self._pro_path else (
             self._settings.last_project_dir or ""
         )
@@ -490,6 +542,7 @@ class MainWindow(QMainWindow):
         self._file_explorer.set_active_file(resolved)
         self._persist_pro_files()
         self._open_file_in_editor(resolved)
+        self._capture_project_snapshot()
 
     def _collect_studio_project(self) -> StudioProject:
         stop = ""
@@ -569,9 +622,12 @@ class MainWindow(QMainWindow):
             self.setWindowTitle(f"GHDL Studio — {name}")
         self._log_console.append_success(f"Opened project: {self._studio_project_path}")
         self._settings.remember_project(self._studio_project_path)
+        self._capture_project_snapshot()
 
     def open_studio_project_path(self, path: str) -> None:
         """Load a ``.ghdlstudio`` file (e.g. from startup recent list)."""
+        if not self._confirm_proceed_despite_unsaved(context="open project"):
+            return
         try:
             project = load_project_file(path)
         except (OSError, ValueError) as exc:
@@ -643,6 +699,7 @@ class MainWindow(QMainWindow):
         self._studio_project_path = str(saved)
         self._settings.last_project_dir = str(Path(saved).parent)
         self._settings.remember_project(str(saved))
+        self._capture_project_snapshot()
         self._log_console.append_success(f"Saved project: {saved}")
         if self._mode == MODE_NORMAL:
             self.setWindowTitle(f"GHDL Studio — {Path(saved).name}")
@@ -673,6 +730,8 @@ class MainWindow(QMainWindow):
                 "Examples not found",
                 "Could not locate the shipped examples directory.\n\n" + hint,
             )
+            return
+        if not self._confirm_proceed_despite_unsaved(context="load example"):
             return
         project = StudioProject(
             mode=spec.mode,
@@ -724,6 +783,7 @@ class MainWindow(QMainWindow):
         open_path = project.active_pro or (project.files[0] if project.files else "")
         if open_path:
             self._open_file_in_editor(open_path)
+        self._capture_project_snapshot()
         self._log_console.append_success(f"Loaded example: {spec.name}")
 
     def _tcl_executable_or_warn(self) -> str | None:
@@ -805,6 +865,7 @@ class MainWindow(QMainWindow):
 
         # Prefer mtime floor from "now" so we pick waves written by this run.
         self._osvvm_run_started_at = time.time() - 1.0
+        self._begin_diagnostics_collection()
         self._log_console.append_output(
             f"OSVVM Scripts: {startup}\n"
             f"Working directory: {plan.cwd}\n"
@@ -1140,14 +1201,123 @@ class MainWindow(QMainWindow):
     def _close_editor_tab(self, index: int) -> None:
         editor = self._editor_tabs.widget(index)
         if isinstance(editor, CodeEditor) and editor.is_modified:
-            answer = QMessageBox.question(
-                self,
-                "Unsaved changes",
-                f"{Path(editor.file_path).name} has been modified. Close anyway?",
+            answer = self._ask_save_discard_cancel(
+                title="Unsaved changes",
+                text=f"{Path(editor.file_path).name} has unsaved changes.",
             )
-            if answer != QMessageBox.StandardButton.Yes:
+            if answer == QMessageBox.StandardButton.Cancel:
                 return
+            if answer == QMessageBox.StandardButton.Save:
+                if not editor.save():
+                    QMessageBox.warning(
+                        self,
+                        "Save failed",
+                        f"Could not save:\n{editor.file_path}",
+                    )
+                    return
         self._editor_tabs.removeTab(index)
+
+    def _iter_code_editors(self) -> list[CodeEditor]:
+        editors: list[CodeEditor] = []
+        for i in range(self._editor_tabs.count()):
+            widget = self._editor_tabs.widget(i)
+            if isinstance(widget, CodeEditor):
+                editors.append(widget)
+        return editors
+
+    def _dirty_editors(self) -> list[CodeEditor]:
+        return [e for e in self._iter_code_editors() if e.is_modified]
+
+    def _ask_save_discard_cancel(self, *, title: str, text: str) -> QMessageBox.StandardButton:
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle(title)
+        box.setText(text)
+        box.setInformativeText("Save your changes, discard them, or cancel.")
+        box.setStandardButtons(
+            QMessageBox.StandardButton.Save
+            | QMessageBox.StandardButton.Discard
+            | QMessageBox.StandardButton.Cancel
+        )
+        box.setDefaultButton(QMessageBox.StandardButton.Save)
+        return QMessageBox.StandardButton(box.exec())
+
+    def _prompt_save_dirty_editors(self) -> bool:
+        """Prompt for each dirty editor. Return False if the user cancels."""
+        for editor in list(self._dirty_editors()):
+            answer = self._ask_save_discard_cancel(
+                title="Unsaved changes",
+                text=f"{Path(editor.file_path).name} has unsaved changes.",
+            )
+            if answer == QMessageBox.StandardButton.Cancel:
+                return False
+            if answer == QMessageBox.StandardButton.Save:
+                if not editor.save():
+                    QMessageBox.warning(
+                        self,
+                        "Save failed",
+                        f"Could not save:\n{editor.file_path}",
+                    )
+                    return False
+        return True
+
+    def _project_snapshot_base(self) -> Path:
+        if self._studio_project_path:
+            return Path(self._studio_project_path).resolve().parent
+        return Path(self._project_root_directory())
+
+    def _capture_project_snapshot(self) -> None:
+        """Remember the current project payload so dirty checks have no false positives."""
+        try:
+            payload = project_to_dict(
+                self._collect_studio_project(),
+                base_dir=self._project_snapshot_base(),
+            )
+            self._project_snapshot = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        except (OSError, TypeError, ValueError):
+            self._project_snapshot = None
+
+    def _is_project_dirty(self) -> bool:
+        if self._project_snapshot is None:
+            return False
+        try:
+            payload = project_to_dict(
+                self._collect_studio_project(),
+                base_dir=self._project_snapshot_base(),
+            )
+            current = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        except (OSError, TypeError, ValueError):
+            return False
+        return current != self._project_snapshot
+
+    def _prompt_save_dirty_project(self) -> bool:
+        """Offer Save project when session options/files changed. False = cancel."""
+        if not self._is_project_dirty():
+            return True
+        answer = self._ask_save_discard_cancel(
+            title="Unsaved project",
+            text="The GHDL Studio project has unsaved changes.",
+        )
+        if answer == QMessageBox.StandardButton.Cancel:
+            return False
+        if answer == QMessageBox.StandardButton.Save:
+            before = self._studio_project_path
+            self._on_save_project()
+            # Save-as cancelled leaves path empty / unchanged and still dirty.
+            if self._is_project_dirty() and not self._studio_project_path and not before:
+                return False
+            if self._is_project_dirty():
+                return False
+        return True
+
+    def _confirm_proceed_despite_unsaved(self, *, context: str) -> bool:
+        """Shared gate for quit / open project / mode switch / examples."""
+        _ = context
+        if not self._prompt_save_dirty_editors():
+            return False
+        if not self._prompt_save_dirty_project():
+            return False
+        return True
 
     def _ghdl_executable_or_warn(self) -> str | None:
         executable = self._settings.ghdl_executable
@@ -1217,6 +1387,11 @@ class MainWindow(QMainWindow):
         self._pending_chain = ["Elaborate", "Run"]
         self._start_analyze()
 
+    def _begin_diagnostics_collection(self) -> None:
+        """Clear Problems panel for a new Analyze / Elaborate / Build."""
+        self._problems_panel.clear()
+        self._diag_last_path = None
+
     def _start_analyze(self) -> None:
         executable = self._ghdl_executable_or_warn()
         if not executable:
@@ -1230,6 +1405,7 @@ class MainWindow(QMainWindow):
             self._pending_chain = []
             QMessageBox.warning(self, "No VHDL files", "Please add VHDL files first.")
             return
+        self._begin_diagnostics_collection()
         if verilog_files:
             names = ", ".join(Path(f).name for f in verilog_files)
             self._log_console.append_output(
@@ -1263,6 +1439,7 @@ class MainWindow(QMainWindow):
                 self, "No top entity", "Please select a top-level entity in the toolbar above."
             )
             return
+        self._begin_diagnostics_collection()
         output_dir = self._ensure_output_dir()
         # Place the elaborated executable in the output directory (also the process cwd).
         elaborate_extra = [
@@ -1455,6 +1632,7 @@ class MainWindow(QMainWindow):
             # Real GHDL/tool stderr is usually an error; OSVVM %% transcript on stderr is not.
             if from_stderr and kind == "info" and not is_osvvm_transcript_line(line):
                 kind = "error"
+            self._collect_problem_from_line(line)
             if kind == "error":
                 self._log_console.append_error(line + ("\n" if part.endswith("\n") else ""))
             elif kind == "warning":
@@ -1462,7 +1640,44 @@ class MainWindow(QMainWindow):
             elif line.strip() or part.endswith("\n"):
                 self._log_console.append_output(line + ("\n" if part.endswith("\n") else ""))
 
+    def _collect_problem_from_line(self, line: str) -> None:
+        header = parse_ghdl_file_header(line)
+        if header:
+            self._diag_last_path = header
+        location = parse_ghdl_location(line, default_path=self._diag_last_path)
+        if location is None:
+            return
+        self._problems_panel.add_diagnostic(location)
+
+    def _record_build_history(self, exit_code: int, label: str) -> None:
+        entry = make_build_history_entry(label, exit_code)
+        self._build_history = append_build_history(
+            self._build_history,
+            entry,
+            limit=_BUILD_HISTORY_LIMIT,
+        )
+        line = format_build_history_line(entry)
+        self._log_console.append_history(line)
+        item = QListWidgetItem(line)
+        item.setData(Qt.ItemDataRole.UserRole, entry)
+        self._build_history_list.insertItem(0, item)
+        while self._build_history_list.count() > _BUILD_HISTORY_LIMIT:
+            self._build_history_list.takeItem(self._build_history_list.count() - 1)
+
+    def _maybe_hint_coverage(self, label: str) -> None:
+        if self._mode != MODE_NORMAL or label != "Run":
+            return
+        try:
+            output_dir = self._ensure_output_dir()
+        except OSError:
+            return
+        hint = format_coverage_hint(output_dir)
+        if not hint:
+            return
+        self._log_console.append_success(hint)
+
     def _on_finished(self, exit_code: int, label: str) -> None:
+        self._record_build_history(exit_code, label)
         if exit_code == 0:
             self._log_console.append_success(f"[{label}] finished successfully (exit code 0).")
             if label == "Run" and self._pending_after_run:
@@ -1475,6 +1690,7 @@ class MainWindow(QMainWindow):
                 self._open_osvvm_html_report()
             elif label == "OSVVM Precompile":
                 self._apply_precompile_lib_path()
+            self._maybe_hint_coverage(label)
             if self._pending_chain:
                 next_step = self._pending_chain.pop(0)
                 if next_step == "Elaborate":
@@ -1685,5 +1901,8 @@ class MainWindow(QMainWindow):
             self._surfer_retry_button.setVisible(True)
 
     def closeEvent(self, event) -> None:  # noqa: N802 (Qt override)
+        if not self._confirm_proceed_despite_unsaved(context="quit"):
+            event.ignore()
+            return
         self._surfer_embedder.stop()
         super().closeEvent(event)

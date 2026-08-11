@@ -16,7 +16,8 @@ _LOCATION_RE = re.compile(
     r"(?P<path>.+?)"
     r":(?P<line>\d+)"
     r":(?P<col>\d+)"
-    r":(?:error|warning|note)\b",
+    r":(?P<severity>error|warning|note)\b"
+    r"(?:\s*:\s*(?P<message>.*))?",
     re.IGNORECASE,
 )
 
@@ -28,7 +29,8 @@ _FILE_HEADER_RE = re.compile(
     re.IGNORECASE,
 )
 _LINE_ONLY_RE = re.compile(
-    r"^(?:Error:\s*)?(?P<line>\d+):(?P<col>\d+):(?:error|warning|note)\b",
+    r"^(?:Error:\s*)?(?P<line>\d+):(?P<col>\d+):(?P<severity>error|warning|note)\b"
+    r"(?:\s*:\s*(?P<message>.*))?",
     re.IGNORECASE,
 )
 
@@ -53,6 +55,8 @@ class GhdlLocation:
     path: str
     line: int
     column: int
+    severity: str = "error"
+    message: str = ""
 
 
 def strip_error_prefix(line: str) -> str:
@@ -105,7 +109,15 @@ def parse_ghdl_location(
                 except ValueError:
                     return None
                 if line_no >= 1 and col_no >= 1:
-                    return GhdlLocation(path=path, line=line_no, column=col_no)
+                    severity = (match.group("severity") or "error").lower()
+                    message = (match.group("message") or "").strip()
+                    return GhdlLocation(
+                        path=path,
+                        line=line_no,
+                        column=col_no,
+                        severity=severity,
+                        message=message,
+                    )
 
     # Split style: "24:31:error: …" using the last seen file header.
     if default_path:
@@ -117,7 +129,15 @@ def parse_ghdl_location(
             except ValueError:
                 return None
             if line_no >= 1 and col_no >= 1:
-                return GhdlLocation(path=default_path, line=line_no, column=col_no)
+                severity = (line_only.group("severity") or "error").lower()
+                message = (line_only.group("message") or "").strip()
+                return GhdlLocation(
+                    path=default_path,
+                    line=line_no,
+                    column=col_no,
+                    severity=severity,
+                    message=message,
+                )
 
     return None
 

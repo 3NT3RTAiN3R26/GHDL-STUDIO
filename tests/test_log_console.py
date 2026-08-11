@@ -50,7 +50,13 @@ def test_log_console_emits_location_on_diagnostic_click(qapp):
     QTest.mouseClick(console.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, point)
 
     assert len(received) == 1
-    assert received[0] == GhdlLocation(path="bad.vhd", line=5, column=3)
+    assert received[0] == GhdlLocation(
+        path="bad.vhd",
+        line=5,
+        column=3,
+        severity="error",
+        message='no declaration for "x"',
+    )
 
 
 def test_log_console_split_ghdl_format_click(qapp):
@@ -79,4 +85,10 @@ def test_log_console_split_ghdl_format_click(qapp):
     QTest.mouseClick(console.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, point)
 
     assert len(received) == 1
-    assert received[0] == GhdlLocation(path=path, line=24, column=31)
+    assert received[0] == GhdlLocation(
+        path=path,
+        line=24,
+        column=31,
+        severity="error",
+        message='missing ";" at end of statement',
+    )

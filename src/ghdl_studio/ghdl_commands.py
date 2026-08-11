@@ -374,6 +374,46 @@ def stage_stimulus_files(
     return results
 
 
+def find_coverage_artifacts(output_dir: str) -> list[str]:
+    """Return sorted paths of ``*.gcda`` / ``*.gcno`` under *output_dir*.
+
+    Empty when the directory is missing or the backend produced no coverage
+    files (e.g. mcode). Searches one level deep plus immediate children.
+    """
+    root = Path(output_dir)
+    if not root.is_dir():
+        return []
+    found: set[str] = set()
+    patterns = ("*.gcda", "*.gcno")
+    for pattern in patterns:
+        for path in root.glob(pattern):
+            if path.is_file():
+                found.add(str(path.resolve()))
+        for path in root.glob(f"**/{pattern}"):
+            if path.is_file():
+                found.add(str(path.resolve()))
+    return sorted(found)
+
+
+def format_coverage_hint(output_dir: str, artifacts: list[str] | None = None) -> str | None:
+    """Return a short user-facing coverage hint, or ``None`` if nothing to report."""
+    files = artifacts if artifacts is not None else find_coverage_artifacts(output_dir)
+    if not files:
+        return None
+    gcda = sum(1 for p in files if p.endswith(".gcda"))
+    gcno = sum(1 for p in files if p.endswith(".gcno"))
+    parts: list[str] = []
+    if gcno:
+        parts.append(f"{gcno} .gcno")
+    if gcda:
+        parts.append(f"{gcda} .gcda")
+    summary = " + ".join(parts) if parts else f"{len(files)} file(s)"
+    return (
+        f"GCC coverage artifacts found under {output_dir} ({summary}). "
+        "Open that folder to inspect or run gcov/lcov."
+    )
+
+
 def clean_output_dir(output_dir: str) -> list[str]:
     """Entfernt alle generierten Build-Artefakte aus dem Ausgabeverzeichnis.
 
