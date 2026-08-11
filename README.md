@@ -52,8 +52,13 @@ On **every operating system** the interface uses a consistent dark theme
     `build …/osvvm` via TCL so Normal mode `-P` can resolve
     `use osvvm.RandomPkg.all` (optional: auto-set **OSVVM lib path**)
   - After a successful OSVVM build, opens an **OSVVM Report** tab with the
-    HTML summary (default `build/build_all/build_all.html` next to the `.pro`;
-    configurable under **Settings → OSVVM HTML report** — absolute paths OK)
+    HTML summary: prefers **Settings → OSVVM HTML report** when that file
+    exists, otherwise auto-detects common layouts next to the `.pro`
+    (`build/build_all/…`, `build_all_windows/…`, `{stem}/{stem}.html`,
+    `index.html`, …) and logs which path was chosen (#42)
+  - **Windows Tool backend** (Settings): **Native** or **WSL** — run GHDL,
+    `tclsh`, Surfer, and OSVVM via `wsl.exe` with `/mnt/c/…` path translation
+    when toolchains live in WSL (#18 / #41)
 - **Dedicated output directory** (default `output/`, configurable in Settings):
   passed to GHDL as `--workdir`, and used as the process **cwd**, so the work
   library (`work-obj*.cf`), object files (`*.o`), waveform dumps (`*.vcd`/`*.ghw`),
@@ -100,6 +105,7 @@ src/ghdl_studio/
 ├── main_window.py          # Main window, Normal + OSVVM modes
 ├── ghdl_commands.py         # Pure helpers to build GHDL CLI arguments (Qt-free, testable)
 ├── osvvm_commands.py        # OSVVM .pro / tclsh helpers (Qt-free, testable)
+├── tool_backend.py           # Native vs WSL toolchain launch / path mapping
 ├── ghdl_runner.py            # Asynchronous process execution via QProcess
 ├── vcd_parser.py             # Minimal VCD parser + time formatting (Qt-free, testable)
 ├── vhdl_scanner.py            # Detection of VHDL entities / Verilog modules (Qt-free, testable)
@@ -151,9 +157,10 @@ tests/                        # Unit tests for the Qt-independent modules
 8. If the script writes a ``.ghw``/``.vcd`` next to the ``.pro``, GHDL Studio
    tries to open it in Surfer / the Waveforms tab
 
-### Windows: Native vs WSL tool backend (#18 / #41)
+### Windows: Native vs WSL tool backend
 
-On **native Windows**, **Settings → Tool backend** chooses how toolchains run:
+On **native Windows**, **Settings → Tool backend** chooses how toolchains run
+(issue #41, related #18):
 
 | Backend | Behaviour |
 |---------|-----------|
