@@ -132,6 +132,41 @@ class FileExplorer(QWidget):
     def files(self) -> list[str]:
         return [str(self._list.item(i).data(_PATH_ROLE) or "") for i in range(self._list.count())]
 
+    def files_for_mode(self, mode: str) -> list[str]:
+        """Return the file list for *mode* (current list or cached)."""
+        if mode == self._mode:
+            return self.files()
+        return list(self._cached_files.get(mode, []))
+
+    def active_file_for_mode(self, mode: str) -> str:
+        if mode == self._mode:
+            return self.active_file()
+        return str(self._cached_active.get(mode, "") or "")
+
+    def replace_mode_files(
+        self,
+        mode: str,
+        paths: list[str],
+        *,
+        active: str = "",
+    ) -> None:
+        """Replace the cached/current file list for *mode* without changing mode."""
+        normalized = [str(Path(p).expanduser().resolve()) for p in paths if p]
+        if mode == self._mode:
+            self.clear_files()
+            if normalized:
+                self.add_files(normalized)
+            if mode == MODE_OSVVM and (active or normalized):
+                self.set_active_file(active or normalized[0])
+            return
+        self._cached_files[mode] = normalized
+        if mode == MODE_OSVVM:
+            self._cached_active[mode] = (
+                str(Path(active).expanduser().resolve())
+                if active
+                else (normalized[0] if normalized else "")
+            )
+
     def clear_files(self) -> None:
         self._updating_checks = True
         self._list.clear()
