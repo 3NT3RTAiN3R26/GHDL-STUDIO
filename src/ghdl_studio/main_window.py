@@ -53,6 +53,13 @@ from ghdl_studio.osvvm_commands import (
     resolve_osvvm_html_report,
     resolve_startup_tcl,
 )
+from ghdl_studio.project_file import (
+    PROJECT_EXTENSION,
+    PROJECT_FILE_FILTER,
+    StudioProject,
+    load_project_file,
+    save_project_file,
+)
 from ghdl_studio.surfer_embed import SurferEmbedder
 from ghdl_studio.settings import AppSettings
 from ghdl_studio.vcd_parser import parse_vcd
@@ -116,6 +123,7 @@ class MainWindow(QMainWindow):
         self._settings = AppSettings()
         self._mode = mode if mode in (MODE_NORMAL, MODE_OSVVM) else MODE_NORMAL
         self._pro_path = str(Path(pro_path).resolve()) if pro_path else ""
+        self._studio_project_path: str = ""
         self._osvvm_run_started_at: float | None = None
         self._pending_precompile_lib_dir: str | None = None
         self._pending_precompile_update_path: bool = False
@@ -224,6 +232,19 @@ class MainWindow(QMainWindow):
         self._switch_mode_action = QAction("Switch mode…", self)
         self._switch_mode_action.triggered.connect(self._on_switch_mode)
         file_menu.addAction(self._switch_mode_action)
+        file_menu.addSeparator()
+        open_project_action = QAction("Open project…", self)
+        open_project_action.setShortcut("Ctrl+O")
+        open_project_action.triggered.connect(self._on_open_project)
+        file_menu.addAction(open_project_action)
+        save_project_action = QAction("Save project", self)
+        save_project_action.setShortcut("Ctrl+Shift+S")
+        save_project_action.triggered.connect(self._on_save_project)
+        file_menu.addAction(save_project_action)
+        save_project_as_action = QAction("Save project as…", self)
+        save_project_as_action.triggered.connect(self._on_save_project_as)
+        file_menu.addAction(save_project_as_action)
+        file_menu.addSeparator()
         save_action = QAction("Save", self)
         save_action.setShortcut("Ctrl+S")
         save_action.triggered.connect(self._save_current_editor)
@@ -432,6 +453,135 @@ class MainWindow(QMainWindow):
         self._file_explorer.set_active_file(resolved)
         self._persist_pro_files()
         self._open_file_in_editor(resolved)
+
+    def _collect_studio_project(self) -> StudioProject:
+        stop = ""
+        if hasattr(self, "_stop_time_edit"):
+            stop = self._stop_time_edit.text().strip()
+        top = self._run_options.top_unit
+        if hasattr(self, "_top_unit_combo"):
+            top = self._top_unit_combo.currentText().strip() or top
+        return StudioProject(
+            mode=self._mode,
+            files=self._file_explorer.files_for_mode(MODE_NORMAL),
+            pro_files=self._file_explorer.files_for_mode(MODE_OSVVM),
+            active_pro=(
+                self._file_explorer.active_file_for_mode(MODE_OSVVM) or self._pro_path
+            ),
+            top_unit=top,
+            stop_time=stop or (self._run_options.stop_time or ""),
+            std=self._run_options.std,
+            output_dir=self._run_options.output_dir,
+            osvvm_lib_path=self._run_options.osvvm_lib_path,
+            custom_lib_path=self._run_options.custom_lib_path,
+            generics=dict(self._run_options.generics),
+            extra_analyze_args=list(self._run_options.extra_analyze_args),
+            extra_elaborate_args=list(self._run_options.extra_elaborate_args),
+            extra_run_args=list(self._run_options.extra_run_args),
+        )
+
+    def _apply_studio_project(self, project: StudioProject, *, project_path: str) -> None:
+        self._studio_project_path = str(Path(project_path).resolve())
+        self._settings.last_project_dir = str(Path(self._studio_project_path).parent)
+
+        self._run_options.top_unit = project.top_unit
+        self._run_options.stop_time = project.stop_time or None
+        self._run_options.std = project.std or self._run_options.std
+        self._run_options.output_dir = project.output_dir or self._run_options.output_dir
+        self._run_options.osvvm_lib_path = project.osvvm_lib_path
+        self._run_options.custom_lib_path = project.custom_lib_path
+        self._run_options.generics = dict(project.generics)
+        if project.extra_analyze_args:
+            self._run_options.extra_analyze_args = list(project.extra_analyze_args)
+        if project.extra_elaborate_args:
+            self._run_options.extra_elaborate_args = list(project.extra_elaborate_args)
+        if project.extra_run_args:
+            self._run_options.extra_run_args = list(project.extra_run_args)
+
+        # Seed both mode lists, then switch UI mode.
+        self._file_explorer.replace_mode_files(MODE_NORMAL, project.files)
+        self._file_explorer.replace_mode_files(
+            MODE_OSVVM,
+            project.pro_files,
+            active=project.active_pro,
+        )
+        self._mode = project.normalized_mode()
+        self._pro_path = project.active_pro if self._mode == MODE_OSVVM else ""
+        if self._mode == MODE_OSVVM and project.pro_files:
+            self._settings.pro_files = project.pro_files
+            if self._pro_path:
+                self._settings.last_pro_file = self._pro_path
+        self._apply_studio_mode()
+
+        if hasattr(self, "_top_unit_combo"):
+            self._top_unit_combo.blockSignals(True)
+            if project.top_unit:
+                if self._top_unit_combo.findText(project.top_unit) < 0:
+                    self._top_unit_combo.addItem(project.top_unit)
+                self._top_unit_combo.setCurrentText(project.top_unit)
+            self._top_unit_combo.blockSignals(False)
+        if hasattr(self, "_stop_time_edit"):
+            self._stop_time_edit.setText(project.stop_time or "")
+
+        name = Path(self._studio_project_path).name
+        if self._mode == MODE_OSVVM:
+            pro_name = Path(self._pro_path).name if self._pro_path else "(no .pro)"
+            self.setWindowTitle(f"GHDL Studio — {name} — OSVVM: {pro_name}")
+        else:
+            self.setWindowTitle(f"GHDL Studio — {name}")
+        self._log_console.append_success(f"Opened project: {self._studio_project_path}")
+
+    def _on_open_project(self) -> None:
+        start = self._settings.last_project_dir or ""
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open GHDL Studio project",
+            start,
+            PROJECT_FILE_FILTER,
+        )
+        if not path:
+            return
+        try:
+            project = load_project_file(path)
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "Open project", str(exc))
+            return
+        self._apply_studio_project(project, project_path=path)
+
+    def _on_save_project(self) -> None:
+        if self._studio_project_path:
+            self._write_studio_project(self._studio_project_path)
+        else:
+            self._on_save_project_as()
+
+    def _on_save_project_as(self) -> None:
+        start_dir = self._settings.last_project_dir or ""
+        suggested = str(Path(start_dir) / f"project{PROJECT_EXTENSION}") if start_dir else ""
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save GHDL Studio project",
+            suggested,
+            PROJECT_FILE_FILTER,
+        )
+        if not path:
+            return
+        self._write_studio_project(path)
+
+    def _write_studio_project(self, path: str) -> None:
+        try:
+            saved = save_project_file(path, self._collect_studio_project())
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "Save project", str(exc))
+            return
+        self._studio_project_path = str(saved)
+        self._settings.last_project_dir = str(Path(saved).parent)
+        self._log_console.append_success(f"Saved project: {saved}")
+        if self._mode == MODE_NORMAL:
+            self.setWindowTitle(f"GHDL Studio — {Path(saved).name}")
+        elif self._pro_path:
+            self.setWindowTitle(
+                f"GHDL Studio — {Path(saved).name} — OSVVM: {Path(self._pro_path).name}"
+            )
 
     def _tcl_executable_or_warn(self) -> str | None:
         executable = self._settings.tcl_executable or find_tclsh_executable() or ""

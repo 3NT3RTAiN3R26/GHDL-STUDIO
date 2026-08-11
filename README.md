@@ -28,6 +28,9 @@ On **every operating system** the interface uses a consistent dark theme
   VHDL); data files still count toward the project root so layouts such as
   `input/ref_wave_data.txt` next to `output/` work with TB paths like
   `../input/…`
+- **Save / Open project** (``.ghdlstudio`` JSON): persists mode, file lists,
+  active `.pro`, top-level entity, stop time, and run options
+  (**File → Save project** / **Open project…**)
 - Simple code editor with **line numbers** and **VHDL / Verilog** syntax highlighting
 - **Choose the top-level entity with a click**: a toolbar on the main window shows a
   combo box of all VHDL entities found in the project files (updated automatically
