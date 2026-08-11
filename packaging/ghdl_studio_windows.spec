@@ -100,6 +100,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=str(ROOT / "src" / "ghdl_studio" / "resources" / "logo_icon.ico"),
 )
 
 coll = COLLECT(

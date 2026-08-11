@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ghdl_studio.branding import load_app_icon, make_wordmark_label
 from ghdl_studio.osvvm_commands import MODE_NORMAL, MODE_OSVVM, is_pro_file
 from ghdl_studio.settings import AppSettings
 
@@ -33,6 +34,9 @@ class StartupModeDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("GHDL Studio — Choose mode")
         self.setModal(True)
+        icon = load_app_icon()
+        if not icon.isNull():
+            self.setWindowIcon(icon)
         self._settings = settings
         self._selected_project_path = ""
 
@@ -105,6 +109,9 @@ class StartupModeDialog(QDialog):
         buttons.rejected.connect(self.reject)
 
         layout = QVBoxLayout(self)
+        wordmark = make_wordmark_label(self, max_width=400)
+        if wordmark is not None:
+            layout.addWidget(wordmark)
         layout.addWidget(intro)
         layout.addWidget(self._normal_radio)
         layout.addWidget(self._osvvm_radio)
@@ -115,7 +122,7 @@ class StartupModeDialog(QDialog):
         layout.addWidget(open_recent_btn)
         layout.addWidget(self._remember_check)
         layout.addWidget(buttons)
-        self.resize(620, 420)
+        self.resize(620, 500)
 
     def _update_pro_enabled(self) -> None:
         enabled = self._osvvm_radio.isChecked()

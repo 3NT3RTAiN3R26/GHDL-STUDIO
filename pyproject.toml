@@ -21,7 +21,7 @@ ghdl-studio = "ghdl_studio.app:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-ghdl_studio = ["resources/*"]
+ghdl_studio = ["resources/*", "resources/**/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

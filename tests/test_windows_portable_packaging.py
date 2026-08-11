@@ -17,6 +17,7 @@ def test_windows_spec_mentions_entry_and_excludes_webengine():
     assert "windows_entry.py" in text
     assert "GHDL-Studio" in text
     assert "QtWebEngineWidgets" in text
+    assert "logo_icon.ico" in text
 
 
 def test_build_script_smoke_checks_version():

@@ -11,6 +11,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 
 from ghdl_studio import __version__
+from ghdl_studio.branding import apply_application_icon
 from ghdl_studio.main_window import MainWindow
 from ghdl_studio.osvvm_commands import MODE_NORMAL, MODE_OSVVM
 from ghdl_studio.settings import AppSettings
@@ -147,6 +148,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     app.setApplicationName("GHDL Studio")
     app.setApplicationVersion(__version__)
+    apply_application_icon(app)
     apply_dark_theme(app)
 
     settings = AppSettings()

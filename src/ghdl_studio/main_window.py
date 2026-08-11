@@ -36,6 +36,7 @@ from ghdl_studio.build_history import (
     format_build_history_line,
     make_build_history_entry,
 )
+from ghdl_studio.branding import load_app_icon
 from ghdl_studio.examples_catalog import (
     adder_normal_example,
     adder_osvvm_example,
@@ -159,6 +160,9 @@ class MainWindow(QMainWindow):
     ) -> None:
         super().__init__()
         self.resize(1100, 750)
+        icon = load_app_icon()
+        if not icon.isNull():
+            self.setWindowIcon(icon)
 
         self._settings = AppSettings()
         self._mode = mode if mode in (MODE_NORMAL, MODE_OSVVM) else MODE_NORMAL
@@ -1122,17 +1126,35 @@ class MainWindow(QMainWindow):
 
     def _show_about(self) -> None:
         from ghdl_studio import __version__
+        from ghdl_studio.branding import make_wordmark_label
 
-        QMessageBox.about(
-            self,
-            "About GHDL Studio",
-            f"GHDL Studio\n"
-            f"Version {__version__}\n\n"
+        dialog = QDialog(self)
+        dialog.setWindowTitle("About GHDL Studio")
+        icon = load_app_icon()
+        if not icon.isNull():
+            dialog.setWindowIcon(icon)
+        layout = QVBoxLayout(dialog)
+        wordmark = make_wordmark_label(dialog, max_width=380)
+        if wordmark is not None:
+            layout.addWidget(wordmark)
+        body = QLabel(
+            f"<b>GHDL Studio</b><br/>"
+            f"Version {__version__}<br/><br/>"
             "A cross-platform interface for the VHDL simulator GHDL, "
-            "built with Python and PySide6.\n\n"
-            "Modes: Normal GHDL (manual files) and OSVVM (.pro via TCL).\n\n"
-            "CLI: ghdl-studio --version",
+            "built with Python and PySide6.<br/><br/>"
+            "Modes: Normal GHDL (manual files) and OSVVM (.pro via TCL).<br/><br/>"
+            "CLI: <code>ghdl-studio --version</code>",
+            dialog,
         )
+        body.setWordWrap(True)
+        body.setTextFormat(Qt.TextFormat.RichText)
+        body.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        layout.addWidget(body)
+        close_btn = QPushButton("Close", dialog)
+        close_btn.clicked.connect(dialog.accept)
+        layout.addWidget(close_btn, alignment=Qt.AlignmentFlag.AlignHCenter)
+        dialog.resize(440, 320)
+        dialog.exec()
 
     def _open_file_in_editor(
         self,
