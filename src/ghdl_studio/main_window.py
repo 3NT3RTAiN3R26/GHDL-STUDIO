@@ -74,6 +74,7 @@ from ghdl_studio.widgets.code_editor import CodeEditor
 from ghdl_studio.widgets.file_explorer import MODE_OSVVM as EXPLORER_MODE_OSVVM
 from ghdl_studio.widgets.file_explorer import MODE_NORMAL as EXPLORER_MODE_NORMAL
 from ghdl_studio.widgets.file_explorer import FileExplorer
+from ghdl_studio.widgets.find_replace_dialog import FindReplaceDialog, prompt_goto_line
 from ghdl_studio.widgets.html_report_view import HtmlReportView
 from ghdl_studio.widgets.log_console import (
     LogConsole,
@@ -219,6 +220,7 @@ class MainWindow(QMainWindow):
         # actions must not auto-chain into the next GHDL step.
         self._pending_chain: list[str] = []
         self._current_vcd_path: str | None = None
+        self._find_dialog: FindReplaceDialog | None = None
         self._apply_studio_mode()
 
     def _create_menu(self) -> None:
@@ -255,6 +257,20 @@ class MainWindow(QMainWindow):
         exit_action = QAction("Quit", self)
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
+
+        edit_menu = menu_bar.addMenu("&Edit")
+        find_action = QAction("Find…", self)
+        find_action.setShortcut("Ctrl+F")
+        find_action.triggered.connect(self._on_find)
+        edit_menu.addAction(find_action)
+        replace_action = QAction("Replace…", self)
+        replace_action.setShortcut("Ctrl+H")
+        replace_action.triggered.connect(self._on_replace)
+        edit_menu.addAction(replace_action)
+        goto_action = QAction("Go to line…", self)
+        goto_action.setShortcut("Ctrl+G")
+        goto_action.triggered.connect(self._on_goto_line)
+        edit_menu.addAction(goto_action)
 
         run_menu = menu_bar.addMenu("&Simulation")
         self._analyze_action = QAction("Analyze (ghdl -a)", self)
@@ -918,6 +934,42 @@ class MainWindow(QMainWindow):
         if isinstance(editor, CodeEditor):
             editor.save()
             self._refresh_top_unit_candidates()
+
+    def _current_code_editor(self) -> CodeEditor | None:
+        editor = self._editor_tabs.currentWidget()
+        return editor if isinstance(editor, CodeEditor) else None
+
+    def _on_find(self) -> None:
+        editor = self._current_code_editor()
+        if editor is None:
+            QMessageBox.information(self, "Find", "Open a file in the Editor tab first.")
+            return
+        self._open_find_dialog(editor, replace_mode=False)
+
+    def _on_replace(self) -> None:
+        editor = self._current_code_editor()
+        if editor is None:
+            QMessageBox.information(self, "Replace", "Open a file in the Editor tab first.")
+            return
+        self._open_find_dialog(editor, replace_mode=True)
+
+    def _open_find_dialog(self, editor: CodeEditor, *, replace_mode: bool) -> None:
+        if self._find_dialog is not None:
+            self._find_dialog.close()
+            self._find_dialog = None
+        dialog = FindReplaceDialog(editor, replace_mode=replace_mode, parent=self)
+        dialog.finished.connect(lambda _=0: editor.clear_find_highlights())
+        self._find_dialog = dialog
+        dialog.show()
+        dialog.raise_()
+        dialog.activateWindow()
+
+    def _on_goto_line(self) -> None:
+        editor = self._current_code_editor()
+        if editor is None:
+            QMessageBox.information(self, "Go to line", "Open a file in the Editor tab first.")
+            return
+        prompt_goto_line(editor, self)
 
     def _close_editor_tab(self, index: int) -> None:
         editor = self._editor_tabs.widget(index)

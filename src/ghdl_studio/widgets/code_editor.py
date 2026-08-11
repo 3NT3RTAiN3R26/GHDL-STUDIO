@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import QRect, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QTextCursor, QTextFormat
+from PySide6.QtGui import QColor, QFont, QPainter, QTextCursor, QTextDocument, QTextFormat
 from PySide6.QtWidgets import QPlainTextEdit, QTextEdit, QWidget
 
 from ghdl_studio.osvvm_commands import is_pro_file
@@ -40,6 +40,7 @@ class CodeEditor(QPlainTextEdit):
         self.setFont(QFont("Consolas", 10))
         self.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
         self.setTabStopDistance(self.fontMetrics().horizontalAdvance(" ") * 4)
+        self._find_selections: list[QTextEdit.ExtraSelection] = []
 
         self._line_number_area = _LineNumberArea(self)
         self.blockCountChanged.connect(self._update_line_number_area_width)
@@ -111,14 +112,74 @@ class CodeEditor(QPlainTextEdit):
         )
 
     def _highlight_current_line(self) -> None:
-        if self.isReadOnly():
-            return
-        selection = QTextEdit.ExtraSelection()
-        selection.format.setBackground(QColor("#2a2a2a"))
-        selection.format.setProperty(QTextFormat.Property.FullWidthSelection, True)
-        selection.cursor = self.textCursor()
-        selection.cursor.clearSelection()
-        self.setExtraSelections([selection])
+        selections: list[QTextEdit.ExtraSelection] = list(self._find_selections)
+        if not self.isReadOnly():
+            selection = QTextEdit.ExtraSelection()
+            selection.format.setBackground(QColor("#2a2a2a"))
+            selection.format.setProperty(QTextFormat.Property.FullWidthSelection, True)
+            selection.cursor = self.textCursor()
+            selection.cursor.clearSelection()
+            selections.append(selection)
+        self.setExtraSelections(selections)
+
+    def highlight_find_matches(self, query: str, *, case_sensitive: bool = False) -> int:
+        """Highlight all occurrences of *query*; return the match count."""
+        self._find_selections = []
+        if not query:
+            self._highlight_current_line()
+            return 0
+        flags = QTextDocument.FindFlag(0)
+        if case_sensitive:
+            flags |= QTextDocument.FindFlag.FindCaseSensitively
+        highlight = QColor("#623d00")
+        cursor = QTextCursor(self.document())
+        while True:
+            cursor = self.document().find(query, cursor, flags)
+            if cursor.isNull():
+                break
+            selection = QTextEdit.ExtraSelection()
+            selection.format.setBackground(highlight)
+            selection.cursor = QTextCursor(cursor)
+            self._find_selections.append(selection)
+        self._highlight_current_line()
+        return len(self._find_selections)
+
+    def clear_find_highlights(self) -> None:
+        self._find_selections = []
+        self._highlight_current_line()
+
+    def find_text(self, query: str, *, flags: QTextDocument.FindFlag | int = 0) -> bool:
+        """Find the next occurrence from the current cursor; return True if found."""
+        if not query:
+            return False
+        return bool(self.find(query, QTextDocument.FindFlag(flags)))
+
+    def replace_all(
+        self,
+        query: str,
+        replacement: str,
+        *,
+        case_sensitive: bool = False,
+    ) -> int:
+        """Replace every occurrence of *query*; return how many were replaced."""
+        if not query:
+            return 0
+        flags = QTextDocument.FindFlag(0)
+        if case_sensitive:
+            flags |= QTextDocument.FindFlag.FindCaseSensitively
+        cursor = QTextCursor(self.document())
+        cursor.beginEditBlock()
+        count = 0
+        search = QTextCursor(self.document())
+        while True:
+            search = self.document().find(query, search, flags)
+            if search.isNull():
+                break
+            search.insertText(replacement)
+            count += 1
+        cursor.endEditBlock()
+        self.highlight_find_matches(query, case_sensitive=case_sensitive)
+        return count
 
     def goto_line(self, line: int, column: int = 1) -> None:
         """Move the cursor to 1-based *line* / *column* and center the view."""
