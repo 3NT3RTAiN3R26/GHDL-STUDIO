@@ -6,7 +6,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-# GHDL compile diagnostics:
+# Classic single-line GHDL compile diagnostics:
 #   bad.vhd:5:3:error: no declaration for "x"
 #   /abs/path.vhd:2:30:warning: …
 # After LogConsole wrapping:
@@ -17,6 +17,18 @@ _LOCATION_RE = re.compile(
     r":(?P<line>\d+)"
     r":(?P<col>\d+)"
     r":(?:error|warning|note)\b",
+    re.IGNORECASE,
+)
+
+# Split style (some GHDL / long-path builds):
+#   /path/to/file.vhd:
+#   24:31:error: missing ";" at end of statement
+_FILE_HEADER_RE = re.compile(
+    r"^(?:Error:\s*)?(?P<path>.+\.(?:vhd|vhdl|v|sv|vh|svh))\s*:\s*$",
+    re.IGNORECASE,
+)
+_LINE_ONLY_RE = re.compile(
+    r"^(?:Error:\s*)?(?P<line>\d+):(?P<col>\d+):(?:error|warning|note)\b",
     re.IGNORECASE,
 )
 
@@ -43,30 +55,71 @@ class GhdlLocation:
     column: int
 
 
-def parse_ghdl_location(line: str) -> GhdlLocation | None:
-    """Return a :class:`GhdlLocation` if *line* looks like a GHDL file diagnostic."""
+def strip_error_prefix(line: str) -> str:
+    """Remove a leading UI ``Error:`` prefix if present."""
+    stripped = line.strip()
+    if stripped.startswith("Error:"):
+        return stripped[len("Error:") :].lstrip()
+    return stripped
+
+
+def parse_ghdl_file_header(line: str) -> str | None:
+    """Return a source path when *line* is a lone ``path:`` header."""
     text = line.strip()
-    if not text:
-        return None
-    match = _LOCATION_RE.match(text)
+    match = _FILE_HEADER_RE.match(text)
     if match is None:
         return None
     path = match.group("path").strip()
-    if not path or path.lower() in _NON_SOURCE_NAMES:
-        return None
-    # Bare tool names with drive-less prefixes like "./sim:error:" lack line:col
-    # and never match; still reject obvious non-files (no suffix, only digits…).
     name = Path(path).name.lower()
     if name in _NON_SOURCE_NAMES:
         return None
-    try:
-        line_no = int(match.group("line"))
-        col_no = int(match.group("col"))
-    except ValueError:
+    return path
+
+
+def parse_ghdl_location(
+    line: str,
+    *,
+    default_path: str | None = None,
+) -> GhdlLocation | None:
+    """Return a :class:`GhdlLocation` if *line* looks like a GHDL file diagnostic.
+
+    Supports:
+    - ``file.vhd:10:5:error: …``
+    - ``Error: file.vhd:10:5:error: …``
+    - ``24:31:error: …`` when *default_path* was set by a preceding ``file.vhd:`` header
+    """
+    text = line.strip()
+    if not text:
         return None
-    if line_no < 1 or col_no < 1:
-        return None
-    return GhdlLocation(path=path, line=line_no, column=col_no)
+
+    # Prefer classic path:line:col form first.
+    match = _LOCATION_RE.match(text)
+    if match is not None:
+        path = match.group("path").strip()
+        if path and path.lower() not in _NON_SOURCE_NAMES:
+            name = Path(path).name.lower()
+            if name not in _NON_SOURCE_NAMES and not path.isdigit():
+                try:
+                    line_no = int(match.group("line"))
+                    col_no = int(match.group("col"))
+                except ValueError:
+                    return None
+                if line_no >= 1 and col_no >= 1:
+                    return GhdlLocation(path=path, line=line_no, column=col_no)
+
+    # Split style: "24:31:error: …" using the last seen file header.
+    if default_path:
+        line_only = _LINE_ONLY_RE.match(text)
+        if line_only is not None:
+            try:
+                line_no = int(line_only.group("line"))
+                col_no = int(line_only.group("col"))
+            except ValueError:
+                return None
+            if line_no >= 1 and col_no >= 1:
+                return GhdlLocation(path=default_path, line=line_no, column=col_no)
+
+    return None
 
 
 def resolve_ghdl_location_path(

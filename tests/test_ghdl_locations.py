@@ -4,6 +4,7 @@ from pathlib import Path
 
 from ghdl_studio.ghdl_locations import (
     GhdlLocation,
+    parse_ghdl_file_header,
     parse_ghdl_location,
     resolve_ghdl_location_path,
 )
@@ -24,10 +25,26 @@ def test_parse_absolute_warning_with_error_prefix():
     assert loc.column == 1
 
 
+def test_parse_split_ghdl_style_with_default_path():
+    header = parse_ghdl_file_header(
+        "Error: /mnt/c/Users/me/GHDL-STUDIO/examples/counter/counter.vhd:"
+    )
+    assert header == "/mnt/c/Users/me/GHDL-STUDIO/examples/counter/counter.vhd"
+    loc = parse_ghdl_location(
+        'Error: 24:31:error: missing ";" at end of statement',
+        default_path=header,
+    )
+    assert loc == GhdlLocation(path=header, line=24, column=31)
+
+
+def test_parse_line_only_without_default_path_is_none():
+    assert parse_ghdl_location("Error: 24:31:error: missing semicolon") is None
+
+
 def test_parse_ignores_tool_only_errors():
     assert parse_ghdl_location("ghdl:error: cannot open bad.vhd") is None
     assert parse_ghdl_location("/usr/bin/ghdl-mcode:error: boom") is None
-    assert parse_ghdl_location('./variabledelaytb:error: simulation failed') is None
+    assert parse_ghdl_location("./variabledelaytb:error: simulation failed") is None
 
 
 def test_parse_ignores_non_diagnostic_lines():
