@@ -31,7 +31,8 @@ On **every operating system** the interface uses a consistent dark theme
 - **Save / Open project** (``.ghdlstudio`` JSON): persists mode, file lists,
   active `.pro`, top-level entity, stop time, and run options
   (**File → Save project** / **Open project…**)
-- Simple code editor with **line numbers** and **VHDL / Verilog** syntax highlighting
+- Simple code editor with **line numbers** and **VHDL / Verilog / Tcl (``.pro``)**
+  syntax highlighting
 - **Choose the top-level entity with a click**: a toolbar on the main window shows a
   combo box of all VHDL entities found in the project files (updated automatically
   when files change); you can also type the name freely

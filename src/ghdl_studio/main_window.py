@@ -40,6 +40,7 @@ from ghdl_studio.ghdl_commands import (
     stage_stimulus_files,
     stimulus_input_dir,
 )
+from ghdl_studio.ghdl_locations import GhdlLocation, resolve_ghdl_location_path
 from ghdl_studio.ghdl_runner import GhdlRunner
 from ghdl_studio.osvvm_commands import (
     MODE_NORMAL,
@@ -149,6 +150,7 @@ class MainWindow(QMainWindow):
         self._file_explorer.active_pro_changed.connect(self._on_active_pro_changed)
 
         self._log_console = LogConsole(self)
+        self._log_console.location_activated.connect(self._on_log_location_activated)
         self._waveform_viewer = WaveformViewer(self)
 
         self._surfer_embedder = SurferEmbedder(self)
@@ -836,18 +838,73 @@ class MainWindow(QMainWindow):
             "CLI: ghdl-studio --version",
         )
 
-    def _open_file_in_editor(self, path: str) -> None:
+    def _open_file_in_editor(
+        self,
+        path: str,
+        *,
+        line: int | None = None,
+        column: int | None = None,
+    ) -> None:
+        resolved = str(Path(path).expanduser().resolve()) if path else ""
+        if not resolved:
+            return
+        target: CodeEditor | None = None
         for i in range(self._editor_tabs.count()):
             editor = self._editor_tabs.widget(i)
-            if isinstance(editor, CodeEditor) and editor.file_path == path:
+            if not isinstance(editor, CodeEditor):
+                continue
+            try:
+                same = Path(editor.file_path).resolve() == Path(resolved)
+            except OSError:
+                same = editor.file_path == resolved or editor.file_path == path
+            if same:
                 self._editor_tabs.setCurrentIndex(i)
-                self._central_tabs.setCurrentWidget(self._editor_tabs)
+                target = editor
+                break
+        if target is None:
+            if not Path(resolved).is_file():
+                QMessageBox.warning(
+                    self,
+                    "File not found",
+                    f"Cannot open source file:\n{path}",
+                )
                 return
-        editor = CodeEditor(path, self)
-        editor.modified_changed.connect(lambda modified, e=editor: self._on_editor_modified(e, modified))
-        index = self._editor_tabs.addTab(editor, Path(path).name)
-        self._editor_tabs.setCurrentIndex(index)
+            target = CodeEditor(resolved, self)
+            target.modified_changed.connect(
+                lambda modified, e=target: self._on_editor_modified(e, modified)
+            )
+            index = self._editor_tabs.addTab(target, Path(resolved).name)
+            self._editor_tabs.setCurrentIndex(index)
         self._central_tabs.setCurrentWidget(self._editor_tabs)
+        if line is not None and target is not None:
+            target.goto_line(line, column or 1)
+
+    def _on_log_location_activated(self, location: GhdlLocation) -> None:
+        """Open the source file from a double-clicked GHDL diagnostic."""
+        search_roots = [
+            self._project_root_directory(),
+            self._run_options.output_dir,
+        ]
+        try:
+            search_roots.append(self._ensure_output_dir())
+        except OSError:
+            pass
+        if self._pro_path:
+            search_roots.append(str(Path(self._pro_path).parent))
+        resolved = resolve_ghdl_location_path(
+            location.path,
+            search_roots=search_roots,
+            known_files=self._file_explorer.files(),
+        )
+        if not resolved:
+            QMessageBox.information(
+                self,
+                "Source not found",
+                f"Could not locate:\n{location.path}\n\n"
+                f"(line {location.line}, column {location.column})",
+            )
+            return
+        self._open_file_in_editor(resolved, line=location.line, column=location.column)
 
     def _on_editor_modified(self, editor: CodeEditor, modified: bool) -> None:
         index = self._editor_tabs.indexOf(editor)

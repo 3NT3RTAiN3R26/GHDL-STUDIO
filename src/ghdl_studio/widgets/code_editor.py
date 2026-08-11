@@ -5,10 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import QRect, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QTextFormat
+from PySide6.QtGui import QColor, QFont, QPainter, QTextCursor, QTextFormat
 from PySide6.QtWidgets import QPlainTextEdit, QTextEdit, QWidget
 
+from ghdl_studio.osvvm_commands import is_pro_file
 from ghdl_studio.vhdl_scanner import is_verilog_file, is_vhdl_file
+from ghdl_studio.widgets.tcl_highlighter import TclHighlighter
 from ghdl_studio.widgets.verilog_highlighter import VerilogHighlighter
 from ghdl_studio.widgets.vhdl_highlighter import VhdlHighlighter
 
@@ -28,7 +30,7 @@ class _LineNumberArea(QWidget):
 
 
 class CodeEditor(QPlainTextEdit):
-    """Plain-text editor with line numbers and VHDL/Verilog highlighting."""
+    """Plain-text editor with line numbers and VHDL/Verilog/Tcl highlighting."""
 
     modified_changed = Signal(bool)
 
@@ -118,6 +120,27 @@ class CodeEditor(QPlainTextEdit):
         selection.cursor.clearSelection()
         self.setExtraSelections([selection])
 
+    def goto_line(self, line: int, column: int = 1) -> None:
+        """Move the cursor to 1-based *line* / *column* and center the view."""
+        block_number = max(0, int(line) - 1)
+        block = self.document().findBlockByNumber(block_number)
+        if not block.isValid():
+            block = self.document().lastBlock()
+        cursor = QTextCursor(block)
+        col = max(1, int(column))
+        # Move within the block without wrapping past its end.
+        max_col = max(1, block.length())  # includes block separator
+        offset = min(col - 1, max(0, max_col - 1))
+        if offset:
+            cursor.movePosition(
+                QTextCursor.MoveOperation.Right,
+                QTextCursor.MoveMode.MoveAnchor,
+                offset,
+            )
+        self.setTextCursor(cursor)
+        self.centerCursor()
+        self.setFocus(Qt.FocusReason.OtherFocusReason)
+
     def save(self) -> None:
         Path(self.file_path).write_text(self.toPlainText(), encoding="utf-8")
         self.document().setModified(False)
@@ -133,4 +156,7 @@ def _highlighter_for_path(file_path: str, document):
         return VerilogHighlighter(document)
     if is_vhdl_file(file_path):
         return VhdlHighlighter(document)
+    suffix = Path(file_path).suffix.lower()
+    if is_pro_file(file_path) or suffix == ".tcl":
+        return TclHighlighter(document)
     return None
