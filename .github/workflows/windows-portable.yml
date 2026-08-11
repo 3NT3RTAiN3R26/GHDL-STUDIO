@@ -1,0 +1,54 @@
+name: Windows portable
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: windows-portable-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: PyInstaller (windows-latest)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Read project version
+        id: ver
+        shell: pwsh
+        run: |
+          $toml = Get-Content pyproject.toml -Raw
+          if ($toml -notmatch 'version\s*=\s*"([^"]+)"') {
+            throw "Could not read version from pyproject.toml"
+          }
+          $v = $Matches[1]
+          "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "Project version: $v"
+
+      - name: Build portable zip
+        shell: pwsh
+        run: |
+          powershell -ExecutionPolicy Bypass -File scripts/build_windows_portable.ps1 `
+            -Version "${{ steps.ver.outputs.version }}"
+
+      - name: Upload portable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GHDL-Studio-windows-portable-${{ steps.ver.outputs.version }}
+          path: dist/GHDL-Studio-windows-portable-${{ steps.ver.outputs.version }}.zip
+          if-no-files-found: error
+          retention-days: 30

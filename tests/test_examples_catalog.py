@@ -1,6 +1,7 @@
 """Tests for shipped example discovery."""
 
 from pathlib import Path
+import sys
 
 from ghdl_studio.examples_catalog import (
     adder_normal_example,
@@ -16,6 +17,24 @@ def test_find_examples_root_from_repo():
     assert root is not None
     assert (root / "counter" / "counter.vhd").is_file()
     assert (root / "adder" / "adder.pro").is_file()
+
+
+def test_find_examples_root_next_to_frozen_exe(tmp_path, monkeypatch):
+    """Portable builds ship examples/ beside GHDL-Studio.exe."""
+    exe_dir = tmp_path / "GHDL-Studio"
+    examples = exe_dir / "examples"
+    counter = examples / "counter"
+    counter.mkdir(parents=True)
+    (counter / "counter.vhd").write_text("-- stub\n", encoding="utf-8")
+    fake_exe = exe_dir / "GHDL-Studio.exe"
+    fake_exe.write_text("", encoding="utf-8")
+
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", str(fake_exe))
+    monkeypatch.delenv("GHDL_STUDIO_EXAMPLES", raising=False)
+
+    root = find_examples_root()
+    assert root == examples.resolve()
 
 
 def test_counter_and_adder_specs():

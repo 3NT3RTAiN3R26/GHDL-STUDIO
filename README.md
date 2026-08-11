@@ -122,6 +122,8 @@ src/ghdl_studio/
     ├── startup_mode_dialog.py     # Normal vs OSVVM mode at startup
     └── run_settings_dialog.py     # Settings dialog (GHDL/Surfer/TCL/OSVVM paths)
 
+packaging/                   # PyInstaller Windows portable entry + .spec
+scripts/build_windows_portable.ps1
 examples/counter/            # Example: simple counter + basic testbench
 examples/adder/              # Example: combinational adder + OSVVM testbench
 tests/                        # Unit tests for the Qt-independent modules
@@ -263,6 +265,34 @@ affected) but is not embedded in the "Waveforms" tab. Possible causes:
 
 ## Installation
 
+### Windows portable (no Python install)
+
+Download the **Windows portable** zip from the latest successful
+[Windows portable](https://github.com/3NT3RTAiN3R26/GHDL-STUDIO/actions/workflows/windows-portable.yml)
+workflow run on `main` (artifact
+`GHDL-Studio-windows-portable-<version>.zip`), or build it yourself on Windows:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/build_windows_portable.ps1
+```
+
+Unzip and run `GHDL-Studio\GHDL-Studio.exe`. The startup mode dialog appears
+without a separate Python install. **Help → About** and
+`GHDL-Studio.exe --version` report the same version as `pyproject.toml`
+(currently **1.0.0**).
+
+**Still install separately** (not bundled):
+
+| Tool | Why |
+|------|-----|
+| **GHDL** | Analyze / Elaborate / Run |
+| **Surfer** (optional) | Embedded / external waveforms |
+| **tclsh** + OSVVM Scripts (optional) | OSVVM `.pro` builds |
+
+The portable zip includes the `examples/` folder next to the exe
+(File → Open example). CI builds the artifact on every `main` push via
+`.github/workflows/windows-portable.yml`.
+
 ### Development install (editable)
 
 ```bash
@@ -343,7 +373,7 @@ ghdl-studio --version
 The same version string appears under **Help → About GHDL Studio**.
 
 **User guide (screenshots):** [GHDL Studio documentation](https://3nt3rtaiN3r26.github.io/GHDL-STUDIO/)
-(GitHub Pages, version **0.6.0**).
+(GitHub Pages).
 
 ## Try the example projects
 

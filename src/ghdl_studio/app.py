@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -32,6 +33,55 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Show program version and exit",
     )
     return parser
+
+
+def _enable_stdio_for_frozen_cli(argv: list[str]) -> None:
+    """Attach stdio for ``--version`` / ``--help`` on frozen Windows builds.
+
+    Windowed (``console=False``) PyInstaller binaries often leave ``sys.stdout``
+    disconnected; without this, ``GHDL-Studio.exe --version`` prints nothing.
+    Prefer inherited pipes (CI redirection), then attach/allocate a console.
+    """
+    if sys.platform != "win32" or not getattr(sys, "frozen", False):
+        return
+    if not any(arg in {"-V", "--version", "-h", "--help"} for arg in argv):
+        return
+
+    def _reopen_fd(name: str, fd: int, mode: str) -> bool:
+        try:
+            setattr(
+                sys,
+                name,
+                open(fd, mode, encoding="utf-8", errors="replace", closefd=False),
+            )
+            return True
+        except OSError:
+            return False
+
+    if _reopen_fd("stdout", 1, "w") and _reopen_fd("stderr", 2, "w"):
+        _reopen_fd("stdin", 0, "r")
+        return
+
+    try:
+        import ctypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        # ATTACH_PARENT_PROCESS = -1 (interactive cmd.exe).
+        if not kernel32.AttachConsole(-1):
+            kernel32.AllocConsole()
+    except Exception:  # noqa: BLE001 - best-effort CLI only
+        pass
+
+    for name, con, mode in (
+        ("stdin", "CONIN$", "r"),
+        ("stdout", "CONOUT$", "w"),
+        ("stderr", "CONOUT$", "w"),
+    ):
+        try:
+            setattr(sys, name, open(con, mode, encoding="utf-8", errors="replace"))
+        except OSError:
+            if name != "stdin" and getattr(sys, name, None) is None:
+                setattr(sys, name, open(os.devnull, "w", encoding="utf-8"))
 
 
 def _resolve_session(settings: AppSettings) -> tuple[str, str, str] | None:
@@ -66,6 +116,7 @@ def _resolve_session(settings: AppSettings) -> tuple[str, str, str] | None:
 def main(argv: list[str] | None = None) -> int:
     """Entry point for the ``ghdl-studio`` console script."""
     cli_argv = list(sys.argv[1:] if argv is None else argv)
+    _enable_stdio_for_frozen_cli(cli_argv)
     parser = build_arg_parser()
     # ``--version`` / ``-V`` exit here via ArgumentParser action.
     _, remaining = parser.parse_known_args(cli_argv)

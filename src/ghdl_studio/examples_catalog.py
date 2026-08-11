@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -28,6 +29,12 @@ def find_examples_root() -> Path | None:
     candidates: list[Path] = []
     if env:
         candidates.append(Path(env).expanduser())
+    # PyInstaller portable: examples/ next to GHDL-Studio.exe (or under _MEIPASS).
+    if getattr(sys, "frozen", False):
+        candidates.append(Path(sys.executable).resolve().parent / "examples")
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            candidates.append(Path(meipass) / "examples")
     here = Path(__file__).resolve()
     # Editable / repo checkout: src/ghdl_studio/examples_catalog.py → repo/examples
     candidates.append(here.parents[2] / "examples")

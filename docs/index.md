@@ -1,6 +1,6 @@
 # GHDL Studio
 
-**Version 0.6.0** — a cross-platform graphical interface for
+**Version 1.0.0** — a cross-platform graphical interface for
 [GHDL](https://ghdl.github.io/ghdl/), built with Python and PySide6.
 
 Runs on **Linux**, **Windows**, and **WSL** with the same dark Fusion theme.
