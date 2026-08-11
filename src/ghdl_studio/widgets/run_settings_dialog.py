@@ -170,9 +170,10 @@ class RunSettingsDialog(QDialog):
                 "a separate window."
             )
 
-        # Top-Level-Entity und Stop-Zeit werden direkt auf der Hauptseite in
-        # der Simulations-Werkzeugleiste festgelegt (klickbare Auswahl aus
-        # den erkannten VHDL-Entities) und sind daher hier nicht dupliziert.
+        # Top-Level-Entity, Stop-Zeit und Generics werden direkt auf der
+        # Hauptseite in der Simulations-Werkzeugleiste festgelegt (klickbare
+        # Auswahl aus den erkannten VHDL-Entities) und sind daher hier nicht
+        # dupliziert.
 
         self._analyze_flags_edit = QLineEdit(" ".join(run_options.extra_analyze_args), self)
         self._analyze_flags_edit.setPlaceholderText("Additional flags for ghdl -a, separated by spaces")

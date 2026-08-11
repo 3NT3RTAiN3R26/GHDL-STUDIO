@@ -108,6 +108,12 @@ def test_build_simulation_option_args():
     ]
 
 
+def test_build_simulation_option_args_empty_generics():
+    assert build_simulation_option_args(generics={}) == []
+    assert build_simulation_option_args(generics=None) == []
+    assert "-g" not in " ".join(build_simulation_option_args(stop_time="1ns"))
+
+
 def test_ensure_osvvm_run_scaffold_creates_dir_and_executable_yml(tmp_path):
     yml = ensure_osvvm_run_scaffold(str(tmp_path))
     assert yml == tmp_path / "OsvvmTemp_GHDL" / "OsvvmRun.yml"

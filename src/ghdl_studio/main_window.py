@@ -81,6 +81,7 @@ from ghdl_studio.widgets.file_explorer import MODE_OSVVM as EXPLORER_MODE_OSVVM
 from ghdl_studio.widgets.file_explorer import MODE_NORMAL as EXPLORER_MODE_NORMAL
 from ghdl_studio.widgets.file_explorer import FileExplorer
 from ghdl_studio.widgets.find_replace_dialog import FindReplaceDialog, prompt_goto_line
+from ghdl_studio.widgets.generics_editor_dialog import GenericsEditorDialog
 from ghdl_studio.widgets.html_report_view import HtmlReportView
 from ghdl_studio.widgets.log_console import (
     LogConsole,
@@ -558,6 +559,7 @@ class MainWindow(QMainWindow):
             self._top_unit_combo.blockSignals(False)
         if hasattr(self, "_stop_time_edit"):
             self._stop_time_edit.setText(project.stop_time or "")
+        self._refresh_generics_button()
 
         name = Path(self._studio_project_path).name
         if self._mode == MODE_OSVVM:
@@ -717,6 +719,7 @@ class MainWindow(QMainWindow):
             self._run_options.top_unit = project.top_unit
         if hasattr(self, "_stop_time_edit"):
             self._stop_time_edit.setText(project.stop_time or "")
+        self._refresh_generics_button()
         # Open the first interesting file in the editor.
         open_path = project.active_pro or (project.files[0] if project.files else "")
         if open_path:
@@ -889,8 +892,8 @@ class MainWindow(QMainWindow):
     def _create_simulation_bar(self) -> None:
         """Erstellt eine zweite, auf der Hauptseite sichtbare Werkzeugleiste
         fuer die am haeufigsten benoetigten Simulationsparameter: die
-        Top-Level-Entity (klickbar auswaehlbar aus den erkannten VHDL-Entities)
-        und die Stop-Zeit der Simulation.
+        Top-Level-Entity (klickbar auswaehlbar aus den erkannten VHDL-Entities),
+        die Stop-Zeit der Simulation und GHDL-Generics (``-gNAME=value``).
         """
         self._top_unit_combo = QComboBox(self)
         self._top_unit_combo.setEditable(True)
@@ -914,22 +917,63 @@ class MainWindow(QMainWindow):
         )
         self._stop_time_edit.textChanged.connect(self._on_stop_time_changed)
 
+        self._generics_button = QPushButton("Generics…", self)
+        self._generics_button.setObjectName("generics_button")
+        self._generics_button.setToolTip(
+            "Edit GHDL generic overrides (-gNAME=value) for Run. "
+            "Empty list = no -g arguments. Saved in .ghdlstudio projects."
+        )
+        self._generics_button.clicked.connect(self._open_generics_dialog)
+
         self._simulation_bar = QToolBar("Simulation settings", self)
         self._simulation_bar.setObjectName("simulation_bar")
         self._simulation_bar.addWidget(QLabel(" Top-level entity: ", self))
         self._simulation_bar.addWidget(self._top_unit_combo)
         self._simulation_bar.addWidget(QLabel("  Stop time: ", self))
         self._simulation_bar.addWidget(self._stop_time_edit)
+        self._simulation_bar.addWidget(QLabel("  ", self))
+        self._simulation_bar.addWidget(self._generics_button)
         self.addToolBarBreak()
         self.addToolBar(self._simulation_bar)
 
         self._refresh_top_unit_candidates()
+        self._refresh_generics_button()
 
     def _on_top_unit_changed(self, text: str) -> None:
         self._run_options.top_unit = text.strip()
 
     def _on_stop_time_changed(self, text: str) -> None:
         self._run_options.stop_time = text.strip() or None
+
+    def _open_generics_dialog(self) -> None:
+        dialog = GenericsEditorDialog(self._run_options.generics, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        self._run_options.generics = dialog.generics()
+        self._refresh_generics_button()
+
+    def _refresh_generics_button(self) -> None:
+        if not hasattr(self, "_generics_button"):
+            return
+        count = len(self._run_options.generics)
+        if count:
+            self._generics_button.setText(f"Generics ({count})…")
+        else:
+            self._generics_button.setText("Generics…")
+        if self._run_options.generics:
+            preview = ", ".join(
+                f"{name}={value}"
+                for name, value in sorted(self._run_options.generics.items())
+            )
+            self._generics_button.setToolTip(
+                f"GHDL generics for Run (-gNAME=value):\n{preview}\n\n"
+                "Click to add, edit, or remove. Empty list = no -g arguments."
+            )
+        else:
+            self._generics_button.setToolTip(
+                "Edit GHDL generic overrides (-gNAME=value) for Run. "
+                "Empty list = no -g arguments. Saved in .ghdlstudio projects."
+            )
 
     def _on_project_files_changed(self, _files: list[str]) -> None:
         if self._mode == MODE_OSVVM:
