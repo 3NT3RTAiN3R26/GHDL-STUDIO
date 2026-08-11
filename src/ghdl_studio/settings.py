@@ -17,7 +17,9 @@ from ghdl_studio.ghdl_commands import (
     DEFAULT_OUTPUT_DIR,
     DEFAULT_RUN_EXTRA_ARGS,
     DEFAULT_STD,
+    DEFAULT_WAVE_FORMAT,
     find_ghdl_executable,
+    normalize_wave_format,
 )
 from ghdl_studio.osvvm_commands import (
     DEFAULT_OSVVM_HTML_REPORT,
@@ -149,6 +151,16 @@ class AppSettings:
     @surfer_integration_enabled.setter
     def surfer_integration_enabled(self, value: bool) -> None:
         self._set("surfer_integration_enabled", value)
+
+    @property
+    def wave_format(self) -> str:
+        """Preferred Normal-mode waveform dump: ``vcd``, ``ghw``, or ``both``."""
+        stored = self._settings.value("wave_format", DEFAULT_WAVE_FORMAT, str)
+        return normalize_wave_format(stored)
+
+    @wave_format.setter
+    def wave_format(self, value: str) -> None:
+        self._set("wave_format", normalize_wave_format(value))
 
     @property
     def last_project_dir(self) -> str:

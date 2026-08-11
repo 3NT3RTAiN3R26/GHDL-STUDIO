@@ -22,6 +22,7 @@ still help locate the project root so paths like `../input/…` work.
 |---------|---------|
 | **Top-level entity** | Entity for Elaborate / Run (auto-filled from scanned VHDL) |
 | **Stop time** | Optional `--stop-time=` for Run (e.g. `200ns`) |
+| **Wave** | Dump format for Run: VCD (`--vcd=`), GHW (`--wave=`), or both |
 | **Generics…** | Optional `-gNAME=value` overrides for Run (saved in `.ghdlstudio`) |
 | **Analyze / Elaborate / Run** | Individual GHDL steps (do not auto-chain) |
 | **Analyze + Elaborate + Run** | Full chain |

@@ -12,6 +12,8 @@ from ghdl_studio.ghdl_commands import (
     DEFAULT_OUTPUT_DIR,
     DEFAULT_RUN_EXTRA_ARGS,
     DEFAULT_STD,
+    DEFAULT_WAVE_FORMAT,
+    normalize_wave_format,
 )
 from ghdl_studio.osvvm_commands import MODE_NORMAL, MODE_OSVVM
 
@@ -36,6 +38,7 @@ class StudioProject:
     osvvm_lib_path: str = ""
     custom_lib_path: str = ""
     generics: dict[str, str] = field(default_factory=dict)
+    wave_format: str = DEFAULT_WAVE_FORMAT
     extra_analyze_args: list[str] = field(
         default_factory=lambda: list(DEFAULT_ANALYZE_EXTRA_ARGS)
     )
@@ -99,6 +102,7 @@ def project_to_dict(project: StudioProject, *, base_dir: str | Path) -> dict:
             if project.custom_lib_path
             else "",
             "generics": dict(project.generics or {}),
+            "wave_format": normalize_wave_format(project.wave_format),
             "extra_analyze_args": list(project.extra_analyze_args or []),
             "extra_elaborate_args": list(project.extra_elaborate_args or []),
             "extra_run_args": list(project.extra_run_args or []),
@@ -167,6 +171,7 @@ def project_from_dict(data: dict, *, base_dir: str | Path) -> StudioProject:
         osvvm_lib_path=_to_absolute(osvvm_lib, base) if osvvm_lib else "",
         custom_lib_path=_to_absolute(custom_lib, base) if custom_lib else "",
         generics=generics,
+        wave_format=normalize_wave_format(str(run.get("wave_format") or DEFAULT_WAVE_FORMAT)),
         extra_analyze_args=[str(a) for a in (run.get("extra_analyze_args") or [])],
         extra_elaborate_args=[str(a) for a in (run.get("extra_elaborate_args") or [])],
         extra_run_args=[str(a) for a in (run.get("extra_run_args") or [])],

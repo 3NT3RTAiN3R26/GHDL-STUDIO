@@ -43,6 +43,10 @@ from ghdl_studio.examples_catalog import (
     find_examples_root,
 )
 from ghdl_studio.ghdl_commands import (
+    DEFAULT_WAVE_FORMAT,
+    WAVE_FORMAT_BOTH,
+    WAVE_FORMAT_GHW,
+    WAVE_FORMAT_VCD,
     RunOptions,
     build_analyze_args,
     build_clean_args,
@@ -53,8 +57,10 @@ from ghdl_studio.ghdl_commands import (
     elaborated_executable_path,
     ensure_osvvm_run_scaffold,
     format_coverage_hint,
+    normalize_wave_format,
     stage_stimulus_files,
     stimulus_input_dir,
+    wave_dump_paths,
 )
 from ghdl_studio.ghdl_locations import (
     GhdlLocation,
@@ -68,6 +74,7 @@ from ghdl_studio.osvvm_commands import (
     MODE_OSVVM,
     diagnose_osvvm_randompkg,
     find_compiled_ghdl_lib_dir,
+    find_osvvm_html_report,
     find_recent_waveform,
     find_tclsh_executable,
     prepare_osvvm_precompile_run,
@@ -162,6 +169,7 @@ class MainWindow(QMainWindow):
             output_dir=self._settings.output_dir,
             osvvm_lib_path=self._settings.osvvm_lib_path,
             custom_lib_path=self._settings.custom_lib_path,
+            wave_format=self._settings.wave_format,
             extra_analyze_args=self._settings.analyze_extra_args,
             extra_elaborate_args=self._settings.elaborate_extra_args,
             extra_run_args=self._settings.run_extra_args,
@@ -565,6 +573,7 @@ class MainWindow(QMainWindow):
             osvvm_lib_path=self._run_options.osvvm_lib_path,
             custom_lib_path=self._run_options.custom_lib_path,
             generics=dict(self._run_options.generics),
+            wave_format=self._run_options.normalized_wave_format(),
             extra_analyze_args=list(self._run_options.extra_analyze_args),
             extra_elaborate_args=list(self._run_options.extra_elaborate_args),
             extra_run_args=list(self._run_options.extra_run_args),
@@ -581,6 +590,8 @@ class MainWindow(QMainWindow):
         self._run_options.osvvm_lib_path = project.osvvm_lib_path
         self._run_options.custom_lib_path = project.custom_lib_path
         self._run_options.generics = dict(project.generics)
+        self._run_options.wave_format = normalize_wave_format(project.wave_format)
+        self._settings.wave_format = self._run_options.wave_format
         if project.extra_analyze_args:
             self._run_options.extra_analyze_args = list(project.extra_analyze_args)
         if project.extra_elaborate_args:
@@ -613,6 +624,7 @@ class MainWindow(QMainWindow):
         if hasattr(self, "_stop_time_edit"):
             self._stop_time_edit.setText(project.stop_time or "")
         self._refresh_generics_button()
+        self._sync_wave_format_combo()
 
         name = Path(self._studio_project_path).name
         if self._mode == MODE_OSVVM:
@@ -745,6 +757,7 @@ class MainWindow(QMainWindow):
             osvvm_lib_path=self._run_options.osvvm_lib_path,
             custom_lib_path=self._run_options.custom_lib_path,
             generics=dict(self._run_options.generics),
+            wave_format=self._run_options.normalized_wave_format(),
             extra_analyze_args=list(self._run_options.extra_analyze_args),
             extra_elaborate_args=list(self._run_options.extra_elaborate_args),
             extra_run_args=list(self._run_options.extra_run_args),
@@ -986,12 +999,26 @@ class MainWindow(QMainWindow):
         )
         self._generics_button.clicked.connect(self._open_generics_dialog)
 
+        self._wave_format_combo = QComboBox(self)
+        self._wave_format_combo.setObjectName("wave_format_combo")
+        self._wave_format_combo.addItem("VCD + GHW", WAVE_FORMAT_BOTH)
+        self._wave_format_combo.addItem("VCD only", WAVE_FORMAT_VCD)
+        self._wave_format_combo.addItem("GHW only", WAVE_FORMAT_GHW)
+        self._wave_format_combo.setToolTip(
+            "Waveform dump for Normal-mode Run: --vcd= (built-in viewer), "
+            "--wave= (Surfer / GHW), or both. Saved in Settings and .ghdlstudio."
+        )
+        self._sync_wave_format_combo()
+        self._wave_format_combo.currentIndexChanged.connect(self._on_wave_format_changed)
+
         self._simulation_bar = QToolBar("Simulation settings", self)
         self._simulation_bar.setObjectName("simulation_bar")
         self._simulation_bar.addWidget(QLabel(" Top-level entity: ", self))
         self._simulation_bar.addWidget(self._top_unit_combo)
         self._simulation_bar.addWidget(QLabel("  Stop time: ", self))
         self._simulation_bar.addWidget(self._stop_time_edit)
+        self._simulation_bar.addWidget(QLabel("  Wave: ", self))
+        self._simulation_bar.addWidget(self._wave_format_combo)
         self._simulation_bar.addWidget(QLabel("  ", self))
         self._simulation_bar.addWidget(self._generics_button)
         self.addToolBarBreak()
@@ -1005,6 +1032,24 @@ class MainWindow(QMainWindow):
 
     def _on_stop_time_changed(self, text: str) -> None:
         self._run_options.stop_time = text.strip() or None
+
+    def _sync_wave_format_combo(self) -> None:
+        if not hasattr(self, "_wave_format_combo"):
+            return
+        fmt = self._run_options.normalized_wave_format()
+        index = self._wave_format_combo.findData(fmt)
+        if index < 0:
+            index = self._wave_format_combo.findData(DEFAULT_WAVE_FORMAT)
+        self._wave_format_combo.blockSignals(True)
+        self._wave_format_combo.setCurrentIndex(max(0, index))
+        self._wave_format_combo.blockSignals(False)
+
+    def _on_wave_format_changed(self, _index: int = 0) -> None:
+        if not hasattr(self, "_wave_format_combo"):
+            return
+        fmt = normalize_wave_format(str(self._wave_format_combo.currentData() or ""))
+        self._run_options.wave_format = fmt
+        self._settings.wave_format = fmt
 
     def _open_generics_dialog(self) -> None:
         dialog = GenericsEditorDialog(self._run_options.generics, self)
@@ -1510,13 +1555,31 @@ class MainWindow(QMainWindow):
 
         vcd_abs = str(Path(output_dir) / self._run_options.vcd_filename())
         ghw_abs = str(Path(output_dir) / self._run_options.ghw_filename())
+        prefer_ghw = bool(
+            self._settings.surfer_integration_enabled and self._settings.surfer_executable
+        )
+        vcd_arg, ghw_arg, pending = wave_dump_paths(
+            self._run_options.wave_format,
+            vcd_abs=vcd_abs,
+            ghw_abs=ghw_abs,
+            prefer_ghw=prefer_ghw,
+        )
         sim_opts = build_simulation_option_args(
-            vcd_path=vcd_abs,
-            wave_path=ghw_abs,
+            vcd_path=vcd_arg,
+            wave_path=ghw_arg,
             stop_time=self._run_options.stop_time,
             generics=self._run_options.generics,
         )
-        self._pending_after_run = vcd_abs
+        self._pending_after_run = pending
+        fmt = self._run_options.normalized_wave_format()
+        dump_bits = []
+        if vcd_arg:
+            dump_bits.append(f"--vcd={Path(vcd_arg).name}")
+        if ghw_arg:
+            dump_bits.append(f"--wave={Path(ghw_arg).name}")
+        self._log_console.append_output(
+            f"Wave format: {fmt} ({', '.join(dump_bits) if dump_bits else 'none'})"
+        )
 
         # Elaborate uses ``-o <output>/<unit>``. GCC/LLVM backends then need that
         # binary started directly — ``ghdl -r <unit>`` only looks in the process cwd.
@@ -1532,8 +1595,8 @@ class MainWindow(QMainWindow):
             self._run_options.top_unit,
             std=self._run_options.std,
             work_dir=output_dir,
-            vcd_path=vcd_abs,
-            wave_path=ghw_abs,
+            vcd_path=vcd_arg,
+            wave_path=ghw_arg,
             stop_time=self._run_options.stop_time,
             generics=self._run_options.generics,
             extra_args=self._run_options.extra_run_args,
@@ -1749,25 +1812,43 @@ class MainWindow(QMainWindow):
         """Load the configured OSVVM HTML report into a central tab."""
         if self._mode != MODE_OSVVM:
             return
-        report = self._osvvm_html_report_path()
-        if report is None:
+        if not self._pro_path:
             QMessageBox.warning(
                 self,
                 "No .pro file",
                 "Open an OSVVM .pro file first (File → Open .pro…).",
             )
             return
+        report, how = find_osvvm_html_report(
+            self._pro_path,
+            self._settings.osvvm_html_report,
+        )
+        if report is None:
+            expected = resolve_osvvm_html_report(
+                self._pro_path,
+                self._settings.osvvm_html_report,
+            )
+            self._log_console.append_output(
+                f"OSVVM HTML report not found (looked for Settings path and "
+                f"common layouts next to the .pro; expected '{expected}'). "
+                "Set Settings → OSVVM HTML report to match your .pro output, "
+                "then use Simulation → Open OSVVM HTML report."
+            )
+            return
         self._ensure_osvvm_report_tab()
         if self._html_report_view.load_file(str(report)):
-            self._log_console.append_output(f"OSVVM HTML report: {report}")
+            if how == "settings":
+                self._log_console.append_output(
+                    f"OSVVM HTML report (Settings): {report}"
+                )
+            else:
+                self._log_console.append_output(
+                    f"OSVVM HTML report (auto-detected): {report}"
+                )
             self._central_tabs.setCurrentWidget(self._html_report_view)
         else:
             self._log_console.append_output(
-                f"OSVVM HTML report not found at '{report}'. "
-                "Set Settings → OSVVM HTML report "
-                "(e.g. build/build_all/build_all.html or an absolute path) "
-                "to match your .pro output, then use Simulation → "
-                "Open OSVVM HTML report."
+                f"OSVVM HTML report could not be loaded: {report}"
             )
 
     def _on_failed_to_start(self, error: str) -> None:

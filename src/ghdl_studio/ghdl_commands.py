@@ -30,6 +30,12 @@ OSVVM_RUN_YML_NAME = "OsvvmRun.yml"
 # (sofern kein absoluter Pfad konfiguriert ist).
 DEFAULT_OUTPUT_DIR = "output"
 
+WAVE_FORMAT_VCD = "vcd"
+WAVE_FORMAT_GHW = "ghw"
+WAVE_FORMAT_BOTH = "both"
+WAVE_FORMATS = (WAVE_FORMAT_VCD, WAVE_FORMAT_GHW, WAVE_FORMAT_BOTH)
+DEFAULT_WAVE_FORMAT = WAVE_FORMAT_BOTH
+
 # Werden standardmaessig bei jedem "ghdl -a" mitgegeben. Sinnvoll z. B. fuer
 # GHDL-Builds mit dem GCC-Backend, bei denen Coverage-Instrumentierung
 # (gcov) und PIE-Kompatibilitaet gewuenscht sind. Ueber den
@@ -249,6 +255,7 @@ class RunOptions:
     custom_lib_path: str = ""
     stop_time: str | None = None
     generics: dict[str, str] = field(default_factory=dict)
+    wave_format: str = DEFAULT_WAVE_FORMAT
     extra_analyze_args: list[str] = field(default_factory=lambda: list(DEFAULT_ANALYZE_EXTRA_ARGS))
     extra_elaborate_args: list[str] = field(default_factory=lambda: list(DEFAULT_ELABORATE_EXTRA_ARGS))
     extra_run_args: list[str] = field(default_factory=lambda: list(DEFAULT_RUN_EXTRA_ARGS))
@@ -256,6 +263,9 @@ class RunOptions:
     def library_paths(self) -> list[str]:
         """Configured precompiled library directories (OSVVM, then custom)."""
         return [self.osvvm_lib_path, self.custom_lib_path]
+
+    def normalized_wave_format(self) -> str:
+        return normalize_wave_format(self.wave_format)
 
     def vcd_filename(self) -> str:
         """Bare Dateiname der VCD-Datei (fuer den ``--vcd=``-Parameter,
@@ -275,6 +285,34 @@ class RunOptions:
     def ghw_path(self) -> str:
         """Pfad zur GHW-Datei relativ zum Arbeitsverzeichnis von GHDL Studio."""
         return str(Path(self.output_dir) / self.ghw_filename())
+
+
+def normalize_wave_format(value: str | None) -> str:
+    """Return a supported wave dump format (``vcd`` / ``ghw`` / ``both``)."""
+    key = (value or "").strip().lower()
+    if key in WAVE_FORMATS:
+        return key
+    return DEFAULT_WAVE_FORMAT
+
+
+def wave_dump_paths(
+    wave_format: str | None,
+    *,
+    vcd_abs: str,
+    ghw_abs: str,
+    prefer_ghw: bool = False,
+) -> tuple[str | None, str | None, str]:
+    """Map a wave-format preference to GHDL dump paths and the post-run open path.
+
+    Returns ``(vcd_path_or_None, ghw_path_or_None, pending_open_path)``.
+    """
+    fmt = normalize_wave_format(wave_format)
+    if fmt == WAVE_FORMAT_VCD:
+        return vcd_abs, None, vcd_abs
+    if fmt == WAVE_FORMAT_GHW:
+        return None, ghw_abs, ghw_abs
+    pending = ghw_abs if prefer_ghw else vcd_abs
+    return vcd_abs, ghw_abs, pending
 
 
 def ensure_osvvm_run_scaffold(project_cwd: str) -> Path:

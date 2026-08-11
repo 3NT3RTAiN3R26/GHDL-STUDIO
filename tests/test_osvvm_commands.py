@@ -353,6 +353,28 @@ def test_resolve_osvvm_html_report_fallback_build_all(tmp_path):
     assert resolved == legacy.resolve()
 
 
+def test_resolve_osvvm_html_report_stem_layout_and_custom_miss(tmp_path):
+    """Detect ``{stem}/{stem}.html`` even when a custom Settings path is missing."""
+    from ghdl_studio.osvvm_commands import find_osvvm_html_report
+
+    pro = tmp_path / "adder.pro"
+    pro.write_text("#\n", encoding="utf-8")
+    report = tmp_path / "adder" / "adder.html"
+    report.parent.mkdir()
+    report.write_text("<html>ok</html>", encoding="utf-8")
+
+    found, how = find_osvvm_html_report(str(pro), "build/missing/report.html")
+    assert found == report.resolve()
+    assert how == "auto-detect"
+
+    # Existing Settings path wins over other candidates.
+    preferred = tmp_path / "custom.html"
+    preferred.write_text("<html>pref</html>", encoding="utf-8")
+    found2, how2 = find_osvvm_html_report(str(pro), "custom.html")
+    assert found2 == preferred.resolve()
+    assert how2 == "settings"
+
+
 def test_find_recent_waveform_prefers_newest(tmp_path):
     older = tmp_path / "old.vcd"
     newer = tmp_path / "sim" / "new.ghw"

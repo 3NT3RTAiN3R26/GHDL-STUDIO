@@ -33,6 +33,7 @@ def test_roundtrip_relative_paths(tmp_path):
         std="08",
         output_dir="output",
         generics={"WIDTH": "8"},
+        wave_format="ghw",
     )
     out = save_project_file(tmp_path / "demo.ghdlstudio", project)
     assert out.name == "demo.ghdlstudio"
@@ -46,6 +47,7 @@ def test_roundtrip_relative_paths(tmp_path):
     assert loaded.top_unit == "foo_tb"
     assert loaded.stop_time == "200ns"
     assert loaded.generics == {"WIDTH": "8"}
+    assert loaded.wave_format == "ghw"
     assert Path(loaded.files[0]).resolve() == src.resolve()
     assert Path(loaded.active_pro).resolve() == pro.resolve()
 

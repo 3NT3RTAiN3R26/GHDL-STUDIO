@@ -35,7 +35,7 @@ STARTUP_TCL_NAME = "StartUp.tcl"
 # file (common OSVVM project layout). Override in Settings.
 DEFAULT_OSVVM_HTML_REPORT = "build/build_all/build_all.html"
 
-# Tried (in order) when the configured path is missing and still the default.
+# Tried (in order) when the configured path is missing.
 OSVVM_HTML_REPORT_FALLBACKS = (
     "build/build_all/build_all.html",
     "build_all/build_all.html",
@@ -86,38 +86,96 @@ def is_pro_file(path: str) -> bool:
     return Path(path).suffix.lower() == ".pro"
 
 
+def osvvm_html_report_candidates(pro_file: str) -> list[str]:
+    """Relative report paths commonly produced next to a ``.pro`` file."""
+    stem = Path(pro_file).stem
+    ordered = [
+        *OSVVM_HTML_REPORT_FALLBACKS,
+        f"{stem}/{stem}.html",
+        f"build/{stem}/{stem}.html",
+        f"{stem}/reports/{stem}.html",
+        f"reports/{stem}.html",
+        f"reports/index.html",
+        f"{stem}.html",
+        f"build/{stem}.html",
+    ]
+    seen: set[str] = set()
+    result: list[str] = []
+    for item in ordered:
+        if item in seen:
+            continue
+        seen.add(item)
+        result.append(item)
+    return result
+
+
+def find_osvvm_html_report(
+    pro_file: str,
+    report_path: str | None = None,
+) -> tuple[Path | None, str]:
+    """Locate an OSVVM HTML report near *pro_file*.
+
+    Returns ``(path_or_None, how)`` where *how* is ``settings``,
+    ``auto-detect``, or ``missing``.
+    """
+    base = Path(pro_file).expanduser().resolve().parent
+    configured = (report_path or "").strip() or DEFAULT_OSVVM_HTML_REPORT
+    candidate = Path(configured).expanduser()
+    if candidate.is_absolute():
+        primary = candidate.resolve()
+    else:
+        primary = (base / candidate).resolve()
+
+    if primary.is_file():
+        return primary, "settings"
+
+    for relative in osvvm_html_report_candidates(pro_file):
+        alt = (base / relative).resolve()
+        if alt.is_file():
+            return alt, "auto-detect"
+
+    stem = Path(pro_file).stem
+    glob_patterns = (
+        f"*/{stem}.html",
+        f"*/*/{stem}.html",
+        "*/build_all.html",
+        "*/build_all_windows.html",
+        "**/build_all.html",
+        "**/build_all_windows.html",
+        "**/index.html",
+    )
+    for pattern in glob_patterns:
+        matches = sorted(
+            path.resolve()
+            for path in base.glob(pattern)
+            if path.is_file() and len(path.relative_to(base).parts) <= 5
+        )
+        if matches:
+            return matches[0], "auto-detect"
+
+    return None, "missing"
+
+
 def resolve_osvvm_html_report(
     pro_file: str,
     report_path: str | None = None,
 ) -> Path:
     """Resolve the OSVVM HTML report path for a ``.pro`` session.
 
-    Relative ``report_path`` values are resolved against the directory that
-    contains ``pro_file``. Absolute paths are returned as-is. Empty
-    ``report_path`` uses :data:`DEFAULT_OSVVM_HTML_REPORT`.
-
-    When the configured path does not exist and is still the default, common
-    alternate layouts (``build_all/…``, ``index.html``) next to the ``.pro``
-    are tried.
+    Prefers the configured Settings path when it exists; otherwise returns the
+    first discovered candidate next to the ``.pro``. When nothing exists yet,
+    returns the configured/default path (may not be present on disk).
     """
+    found, _how = find_osvvm_html_report(pro_file, report_path)
+    if found is not None:
+        return found
+
     configured = (report_path or "").strip() or DEFAULT_OSVVM_HTML_REPORT
     candidate = Path(configured).expanduser()
     if candidate.is_absolute():
         return candidate.resolve()
-
     base = Path(pro_file).expanduser().resolve().parent
-    primary = (base / candidate).resolve()
-    if primary.is_file():
-        return primary
-
-    # Only search fallbacks when the user left the default / empty setting.
-    using_default = not (report_path or "").strip() or configured in OSVVM_HTML_REPORT_FALLBACKS
-    if using_default:
-        for relative in OSVVM_HTML_REPORT_FALLBACKS:
-            alt = (base / relative).resolve()
-            if alt.is_file():
-                return alt
-    return primary
+    return (base / candidate).resolve()
 
 
 def ghdl_bin_directory(ghdl_executable: str | None) -> str | None:
