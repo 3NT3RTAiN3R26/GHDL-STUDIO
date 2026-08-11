@@ -6,6 +6,7 @@ QtGui = pytest.importorskip("PySide6.QtGui")
 QtWidgets = pytest.importorskip("PySide6.QtWidgets")
 
 from ghdl_studio.widgets.code_editor import CodeEditor, _highlighter_for_path  # noqa: E402
+from ghdl_studio.widgets.tcl_highlighter import TclHighlighter  # noqa: E402
 from ghdl_studio.widgets.verilog_highlighter import VerilogHighlighter  # noqa: E402
 from ghdl_studio.widgets.vhdl_highlighter import VhdlHighlighter  # noqa: E402
 
@@ -22,7 +23,35 @@ def test_highlighter_for_path_selects_vhdl_and_verilog(qapp, tmp_path):
     assert isinstance(_highlighter_for_path(str(tmp_path / "b.vhdl"), doc), VhdlHighlighter)
     assert isinstance(_highlighter_for_path(str(tmp_path / "c.v"), doc), VerilogHighlighter)
     assert isinstance(_highlighter_for_path(str(tmp_path / "d.sv"), doc), VerilogHighlighter)
+    assert isinstance(_highlighter_for_path(str(tmp_path / "run.pro"), doc), TclHighlighter)
+    assert isinstance(_highlighter_for_path(str(tmp_path / "StartUp.tcl"), doc), TclHighlighter)
     assert _highlighter_for_path(str(tmp_path / "notes.txt"), doc) is None
+
+
+def test_code_editor_uses_tcl_highlighter_for_pro(qapp, tmp_path):
+    path = tmp_path / "run.pro"
+    path.write_text(
+        "# OSVVM\n"
+        "SetVHDLVersion 2008\n"
+        "if {[info exists ::x]} { set y 1 }\n"
+        "analyze adder.vhd\n",
+        encoding="utf-8",
+    )
+    editor = CodeEditor(str(path))
+    assert isinstance(editor._highlighter, TclHighlighter)
+
+
+def test_tcl_highlighter_rehighlights_without_error(qapp):
+    doc = QtGui.QTextDocument()
+    highlighter = TclHighlighter(doc)
+    doc.setPlainText(
+        "# comment\n"
+        "set x 1\n"
+        'puts "hello $x"\n'
+        "analyze foo.vhd\n"
+    )
+    highlighter.rehighlight()
+    assert doc.blockCount() >= 3
 
 
 def test_code_editor_shows_line_number_gutter(qapp, tmp_path):
