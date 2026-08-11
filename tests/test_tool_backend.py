@@ -74,6 +74,43 @@ def test_wrap_for_backend_wsl_translates(monkeypatch):
     assert "/mnt/c/proj/tb.vhd" in inv.args
 
 
+def test_wrap_for_backend_wsl_keeps_elaborated_binary_path(monkeypatch):
+    """GCC/LLVM sim binaries must not be reduced to a bare PATH name (#WSL Run)."""
+    monkeypatch.setattr(
+        "ghdl_studio.tool_backend.find_wsl_executable",
+        lambda: r"C:\Windows\System32\wsl.exe",
+    )
+    elaborated = (
+        r"C:\Users\me\GHDL-STUDIO\examples\counter\output\counter_tb"
+    )
+    inv = wrap_for_backend(
+        elaborated,
+        [
+            r"--vcd=C:\Users\me\GHDL-STUDIO\examples\counter\output\counter_tb.vcd",
+            r"--wave=C:\Users\me\GHDL-STUDIO\examples\counter\output\counter_tb.ghw",
+        ],
+        cwd=r"C:\Users\me\GHDL-STUDIO\examples\counter\output",
+        backend=TOOL_BACKEND_WSL,
+    )
+    assert inv.executable.endswith("wsl.exe")
+    assert "--cd" in inv.args
+    assert (
+        "/mnt/c/Users/me/GHDL-STUDIO/examples/counter/output" in inv.args
+    )
+    # Full path — not bare ``counter_tb`` (would fail execvpe / PATH lookup).
+    assert (
+        "/mnt/c/Users/me/GHDL-STUDIO/examples/counter/output/counter_tb"
+        in inv.args
+    )
+    assert "counter_tb" not in inv.args  # only as path suffix, not as -e token alone
+    # Ensure -e is followed by the full translated path.
+    e_index = inv.args.index("-e")
+    assert inv.args[e_index + 1].endswith("/counter_tb")
+    assert inv.args[e_index + 1].startswith("/mnt/c/")
+    assert any(a.startswith("--vcd=/mnt/c/") for a in inv.args)
+    assert any(a.startswith("--wave=/mnt/c/") for a in inv.args)
+
+
 def test_wrap_for_backend_wsl_missing_raises(monkeypatch):
     monkeypatch.setattr("ghdl_studio.tool_backend.find_wsl_executable", lambda: None)
     with pytest.raises(RuntimeError, match="WSL is not available"):

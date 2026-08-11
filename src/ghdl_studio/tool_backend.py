@@ -171,17 +171,17 @@ def wrap_for_backend(
 
     tool = executable.strip()
     # Windows Settings often store ``C:\\…\\ghdl.exe``. Prefer the Linux PATH
-    # name inside WSL unless the user already set a Unix path.
+    # name inside WSL for Windows PE toolchains (``.exe``). Elaborated
+    # simulation binaries are extensionless ELF files under ``/mnt/c/…`` and
+    # must keep a full translated path — a bare name is not on PATH even with
+    # ``wsl --cd``.
     normalised_tool = tool.replace("\\", "/")
-    if looks_like_filesystem_path(tool) and (
-        normalised_tool[1:3] == ":/" or normalised_tool.lower().endswith(".exe")
-    ):
-        base = normalised_tool.rsplit("/", 1)[-1]
-        if base.lower().endswith(".exe"):
-            base = base[:-4]
-        tool = base or tool
-    elif translate_paths and looks_like_filesystem_path(tool):
-        tool = windows_path_to_wsl(tool)
+    if looks_like_filesystem_path(tool):
+        if normalised_tool.lower().endswith(".exe"):
+            base = normalised_tool.rsplit("/", 1)[-1][:-4]
+            tool = base or tool
+        elif translate_paths:
+            tool = windows_path_to_wsl(tool)
 
     translated_args = [
         translate_path_token(arg, to_wsl=translate_paths) for arg in argv
